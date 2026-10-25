@@ -18,6 +18,9 @@ import { TEAM_COLOURS, TeamFields, type TeamFieldsValue } from "./TeamForm";
 import { TossStep, type TossValue } from "./TossStep";
 
 const OVER_PRESETS = [6, 8, 10, 20];
+/** Each side needs 2–15 players; the two sides can be different sizes. (Server checks the same.) */
+const MIN_PLAYERS = 2;
+const MAX_PLAYERS = 15;
 const STEP_TITLES = ["Teams and format", "Today's players", "Toss", "Batting order"];
 
 interface Guest {
@@ -125,7 +128,12 @@ function SidePicker({
             <select
               id={`${label}-team`}
               value={side.teamId ?? ""}
-              onChange={(e) => onChange({ ...side, teamId: e.target.value || null, selected: [], guests: [] })}
+              onChange={(e) => {
+                const teamId = e.target.value || null;
+                const squad = teams.find((t) => t.id === teamId)?.players ?? [];
+                // Whole squad selected by default; untick anyone not playing today.
+                onChange({ ...side, teamId, selected: squad.slice(0, MAX_PLAYERS).map((p) => p.id), guests: [] });
+              }}
               className="h-12 rounded-xl border border-line bg-surface px-3 text-base text-ink"
             >
               <option value="">Choose a saved team</option>
@@ -165,18 +173,17 @@ function SquadPicker({
   side,
   team,
   info,
-  playersPerSide,
   onChange,
 }: {
   side: SideDraft;
   team: Team | undefined;
   info: { name: string; colour: string };
-  playersPerSide: number;
   onChange: (s: SideDraft) => void;
 }) {
   const [guestName, setGuestName] = useState("");
   const count = side.mode === "quick" ? side.quick.players.length : side.selected.length + side.guests.length;
-  const full = count >= playersPerSide;
+  const full = count >= MAX_PLAYERS;
+  const enough = count >= MIN_PLAYERS;
 
   const heading = (
     <h3 className="flex items-center justify-between text-sm font-bold">
@@ -184,8 +191,9 @@ function SquadPicker({
         <span className="size-3 rounded" style={{ background: info.colour }} aria-hidden="true" />
         {info.name}
       </span>
-      <span className={count === playersPerSide ? "text-pitch" : "text-ink-muted"}>
-        {count} / {playersPerSide}
+      <span className={enough ? "text-pitch" : "text-wicket"}>
+        {count} player{count === 1 ? "" : "s"}
+        {enough ? "" : ` · need ${MIN_PLAYERS}+`}
       </span>
     </h3>
   );
@@ -196,7 +204,7 @@ function SquadPicker({
         {heading}
         <PlayerList
           players={side.quick.players}
-          max={playersPerSide}
+          max={MAX_PLAYERS}
           onChange={(players) => onChange({ ...side, quick: { ...side.quick, players } })}
         />
       </section>
@@ -212,6 +220,7 @@ function SquadPicker({
   return (
     <section className="flex flex-col gap-3 rounded-2xl border border-line bg-surface p-4">
       {heading}
+      <p className="text-sm text-ink-muted">Everyone is selected. Untick anyone not playing today, or add a guest.</p>
       <ul className="flex flex-col gap-1">
         {team?.players.map((p) => {
           const on = side.selected.includes(p.id);
@@ -301,7 +310,6 @@ export function MatchSetupForm() {
   const [venue, setVenue] = useState("");
   const [overs, setOvers] = useState(20);
   const [customOvers, setCustomOvers] = useState(false);
-  const [playersPerSide, setPlayersPerSide] = useState(11);
   const [lastManStands, setLastManStands] = useState(false);
   const [sides, setSides] = useState<[SideDraft, SideDraft]>([emptySide(TEAM_COLOURS[0]!), emptySide(TEAM_COLOURS[1]!)]);
   const [toss, setToss] = useState<TossValue>({});
@@ -334,7 +342,8 @@ export function MatchSetupForm() {
     }
     if (n === 1) {
       for (const [i, l] of lineups.entries()) {
-        if (l.length !== playersPerSide) return `${infos[i]!.name} needs exactly ${playersPerSide} players (has ${l.length}).`;
+        if (l.length < MIN_PLAYERS) return `${infos[i]!.name} needs at least ${MIN_PLAYERS} players (has ${l.length}).`;
+        if (l.length > MAX_PLAYERS) return `${infos[i]!.name} can have at most ${MAX_PLAYERS} players (has ${l.length}).`;
         if (l.some((p) => !p.name.trim())) return `Every player in ${infos[i]!.name} needs a name.`;
       }
     }
@@ -372,7 +381,6 @@ export function MatchSetupForm() {
         title: title.trim(),
         venue: venue.trim() || undefined,
         overs,
-        playersPerSide,
         lastManStands,
         sides: sides.map((s, i) => {
           const byId = new Map(lineups[i]!.map((p) => [p.id, p]));
@@ -498,27 +506,13 @@ export function MatchSetupForm() {
               )}
             </fieldset>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div className="flex flex-col gap-2 rounded-2xl border border-line bg-surface p-3">
-                <span className="text-sm font-bold text-ink-muted">Players per side</span>
-                <div className="flex items-center justify-between">
-                  <Button variant="secondary" aria-label="Fewer players" className="w-11 px-0" disabled={playersPerSide <= 2} onClick={() => setPlayersPerSide((n) => n - 1)}>
-                    −
-                  </Button>
-                  <span className="font-score text-2xl font-bold">{playersPerSide}</span>
-                  <Button variant="secondary" aria-label="More players" className="w-11 px-0" disabled={playersPerSide >= 15} onClick={() => setPlayersPerSide((n) => n + 1)}>
-                    +
-                  </Button>
-                </div>
-              </div>
-              <label className="flex flex-col gap-2 rounded-2xl border border-line bg-surface p-3">
-                <span className="text-sm font-bold text-ink-muted">Last man stands</span>
-                <span className="flex min-h-11 items-center justify-between">
-                  <span className="text-sm text-ink-muted">{lastManStands ? "On" : "Off"}</span>
-                  <input type="checkbox" checked={lastManStands} onChange={(e) => setLastManStands(e.target.checked)} className="size-6 accent-pitch" />
-                </span>
-              </label>
-            </div>
+            <label className="flex min-h-16 items-center justify-between gap-3 rounded-2xl border border-line bg-surface px-4">
+              <span className="flex flex-col">
+                <span className="font-semibold">Last man stands</span>
+                <span className="text-sm text-ink-muted">The last batter can bat alone</span>
+              </span>
+              <input type="checkbox" checked={lastManStands} onChange={(e) => setLastManStands(e.target.checked)} className="size-6 accent-pitch" />
+            </label>
           </>
         )}
 
@@ -529,7 +523,6 @@ export function MatchSetupForm() {
               side={sides[i]}
               team={teams.find((t) => t.id === sides[i].teamId)}
               info={infos[i]}
-              playersPerSide={playersPerSide}
               onChange={(s) => setSide(i, s)}
             />
           ))}

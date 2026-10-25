@@ -37,7 +37,10 @@ export interface InningsOpeners {
 export interface MatchConfig {
   /** Overs per innings, e.g. 20 for T20 or 8 for a short local match. */
   overs: number;
-  /** Players per side (11 by default; local matches often have fewer). */
+  /**
+   * Size of the larger side, for display only. Sides may differ in size (each needs at least 2);
+   * all out depends on the batting team's own player count.
+   */
   playersPerSide: number;
   /** If true, the last batter can bat alone, so a side is all out only when every batter is out. */
   lastManStands: boolean;

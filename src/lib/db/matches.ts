@@ -23,6 +23,9 @@ import {
 } from "./types";
 
 const STATUSES: MatchStatus[] = ["upcoming", "live", "innings_break", "finished"];
+/** Players per side: at least 2 (a striker and a non-striker); at most 15 (the database limit). */
+export const MIN_PLAYERS = 2;
+export const MAX_PLAYERS = 15;
 const MATCH_COLUMNS =
   "id, title, venue, team_a, team_b, overs, players_per_side, last_man_stands, toss_winner, toss_decision, batting_first, openers, ended_innings, status, result, created_at";
 
@@ -82,7 +85,6 @@ export function parseCreateMatchInput(body: unknown): CreateMatchInput {
     title: requireText(b.title, "Match name", 80),
     venue: optionalText(b.venue, "Venue", 80),
     overs: requireInt(b.overs, "Overs", 1, 50),
-    playersPerSide: requireInt(b.playersPerSide, "Players per side", 2, 15),
     lastManStands: b.lastManStands === true,
     sides: [parseSide(b.sides[0], 0), parseSide(b.sides[1], 1)],
     toss: { winner: toss.winner, decision: toss.decision },
@@ -219,10 +221,11 @@ async function resolveSide(ownerKey: string, side: MatchSideInput, label: string
 }
 
 export async function createMatch(ownerKey: string, input: CreateMatchInput, origin: string): Promise<CreateMatchResult> {
-  // Checks that don't need the database.
+  // Checks that don't need the database. Sides may differ in size (local cricket often does).
   for (const [i, side] of input.sides.entries()) {
-    if (side.players.length !== input.playersPerSide) {
-      throw new ApiError(400, `Team ${i + 1} needs exactly ${input.playersPerSide} players (has ${side.players.length}).`);
+    const n = side.players.length;
+    if (n < MIN_PLAYERS || n > MAX_PLAYERS) {
+      throw new ApiError(400, `Team ${i + 1} needs ${MIN_PLAYERS} to ${MAX_PLAYERS} players (has ${n}).`);
     }
     if (new Set(side.players.map((p) => p.id)).size !== side.players.length) {
       throw new ApiError(400, `Team ${i + 1} lists the same player twice.`);
@@ -258,7 +261,8 @@ export async function createMatch(ownerKey: string, input: CreateMatchInput, ori
       team_a: a.teamId,
       team_b: b.teamId,
       overs: input.overs,
-      players_per_side: input.playersPerSide,
+      // The larger side, for display. All out uses each batting side's own size (see the engine).
+      players_per_side: Math.max(input.sides[0].players.length, input.sides[1].players.length),
       last_man_stands: input.lastManStands,
       toss_winner: tossWinner,
       toss_decision: input.toss.decision,

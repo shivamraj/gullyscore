@@ -171,7 +171,7 @@ function startInnings(
 }
 
 function isInningsOver(config: MatchConfig, inn: InningsAcc): boolean {
-  if (inn.wickets >= maxWickets(config)) return true;
+  if (inn.wickets >= maxWickets(config, inn.battingTeam)) return true;
   if (inn.legalBalls >= config.overs * BALLS_PER_OVER) return true;
   if (inn.target !== undefined && inn.runs >= inn.target) return true;
   if (inn.striker === null && inn.nonStriker === null && inn.ballCount > 0) return true;
@@ -424,7 +424,7 @@ export function computeState(config: MatchConfig, balls: BallEvent[]): MatchStat
       secondRuns: cur.runs,
       secondWickets: cur.wickets,
       secondLegalBalls: cur.legalBalls,
-      maxWickets: maxWickets(config),
+      maxWickets: maxWickets(config, cur.battingTeam),
       totalOvers: config.overs,
     });
     result = r.text;
@@ -528,7 +528,7 @@ export function validateNext(config: MatchConfig, balls: BallEvent[], ball: Ball
     if (w.fielder && !bowling.has(w.fielder)) return fail("The fielder must be in the bowling team.");
 
     const remaining = state.yetToBat.map((p) => p.id);
-    const inningsEndsByWickets = cur.wickets + 1 >= maxWickets(config);
+    const inningsEndsByWickets = cur.wickets + 1 >= maxWickets(config, cur.battingTeam);
     const endsByOvers = isLegal(ball) && cur.legalBalls + 1 >= config.overs * BALLS_PER_OVER;
     const endsByTarget = cur.target !== undefined && cur.runs + totalRuns(ball) >= cur.target;
     const needIncoming = remaining.length > 0 && !inningsEndsByWickets && !endsByOvers && !endsByTarget;

@@ -1,6 +1,6 @@
 // Cricket rules for a single ball. Each function is small and pure so it can be tested on its own.
 
-import type { BallChip, BallEvent, MatchConfig, WicketType } from "./types";
+import type { BallChip, BallEvent, MatchConfig, TeamConfig, WicketType } from "./types";
 
 export const BALLS_PER_OVER = 6;
 
@@ -50,9 +50,13 @@ export function isBowlerWicket(type: WicketType): boolean {
   return type !== "runout" && type !== "retired";
 }
 
-/** Wickets needed to bowl a side out. */
-export function maxWickets(config: MatchConfig): number {
-  return config.lastManStands ? config.playersPerSide : config.playersPerSide - 1;
+/**
+ * Wickets needed to bowl out this batting side. Sides can be different sizes in local cricket,
+ * so it depends on the batting team's own number of players, not on the other side.
+ */
+export function maxWickets(config: MatchConfig, battingTeam: TeamConfig): number {
+  const players = battingTeam.players.length;
+  return config.lastManStands ? players : players - 1;
 }
 
 /** 20 legal balls → "3.2" */
