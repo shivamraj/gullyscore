@@ -220,7 +220,8 @@ async function resolveSide(ownerKey: string, side: MatchSideInput, label: string
   return { teamId, name, shortCode, playerIds: side.players.map((p) => p.id) };
 }
 
-export async function createMatch(ownerKey: string, input: CreateMatchInput, origin: string): Promise<CreateMatchResult> {
+/** Creates a match owned by this umpire (`ownerId` = their user id). Only they can score it. */
+export async function createMatch(ownerId: string, input: CreateMatchInput, origin: string): Promise<CreateMatchResult> {
   // Checks that don't need the database. Sides may differ in size (local cricket often does).
   for (const [i, side] of input.sides.entries()) {
     const n = side.players.length;
@@ -244,14 +245,13 @@ export async function createMatch(ownerKey: string, input: CreateMatchInput, ori
   if (!bowling.includes(bowler)) throw new ApiError(400, "Pick the opening bowler from the bowling side.");
 
   const [a, b] = [
-    await resolveSide(ownerKey, input.sides[0], "Team 1"),
-    await resolveSide(ownerKey, input.sides[1], "Team 2"),
+    await resolveSide(ownerId, input.sides[0], "Team 1"),
+    await resolveSide(ownerId, input.sides[1], "Team 2"),
   ];
   if (a.teamId === b.teamId) throw new ApiError(400, "Pick two different teams.");
   const tossWinner = input.toss.winner === 0 ? a.teamId : b.teamId;
   const battingFirst = battingIndex === 0 ? a.teamId : b.teamId;
 
-  const token = newScoringToken();
   const db = getServerSupabase();
   const { data: match, error } = await db
     .from("matches")
@@ -268,8 +268,10 @@ export async function createMatch(ownerKey: string, input: CreateMatchInput, ori
       toss_decision: input.toss.decision,
       batting_first: battingFirst,
       openers: [input.openers],
-      scoring_token_hash: hashToken(token),
-      owner_key: ownerKey,
+      // Scoring links are gone (the umpire's login decides who scores). The column is kept so
+      // existing databases need no change; it gets the hash of a random token nobody ever sees.
+      scoring_token_hash: hashToken(newScoringToken()),
+      owner_key: ownerId,
     })
     .select(MATCH_COLUMNS)
     .single();
@@ -305,7 +307,7 @@ export async function createMatch(ownerKey: string, input: CreateMatchInput, ori
   return {
     matchId: m.id,
     viewerUrl: `${origin}/match/${m.id}`,
-    scoringUrl: `${origin}/score/${m.id}?t=${token}`,
+    scoringUrl: `${origin}/score/${m.id}`,
   };
 }
 
@@ -366,13 +368,19 @@ export async function listMatches(status?: string, limit = 50, ownerId?: string)
 }
 
 /**
- * Moves matches created on this device (before logins existed) to the umpire's account, so they
- * show on their dashboard. `owner_key` holds the umpire's user id from now on. Runs on every
- * dashboard visit; does nothing once a device's matches have moved. Returns how many moved.
+ * Moves matches and saved teams created on this device (before logins existed) to the umpire's
+ * account, so they show on their dashboard and they can keep scoring them. `owner_key` holds the
+ * umpire's user id from now on. Runs on every dashboard visit; does nothing once a device's data
+ * has moved. Returns how many matches and teams moved.
  */
 export async function claimDeviceMatches(userId: string, deviceKey: string): Promise<number> {
   if (!isUuid(userId) || !isUuid(deviceKey) || userId === deviceKey) return 0;
-  const { data, error } = await getServerSupabase().from("matches").update({ owner_key: userId }).eq("owner_key", deviceKey).select("id");
-  if (error) throw error;
-  return data?.length ?? 0;
+  const db = getServerSupabase();
+  const [matches, teams] = await Promise.all([
+    db.from("matches").update({ owner_key: userId }).eq("owner_key", deviceKey).select("id"),
+    db.from("teams").update({ owner_key: userId }).eq("owner_key", deviceKey).select("id"),
+  ]);
+  if (matches.error) throw matches.error;
+  if (teams.error) throw teams.error;
+  return (matches.data?.length ?? 0) + (teams.data?.length ?? 0);
 }

@@ -1,10 +1,11 @@
 // GET  /api/matches?status=live  → match cards for the home page (status is optional)
-// POST /api/matches              → create a match; returns the viewer link and the secret scoring link
+// POST /api/matches              → create a match; returns its viewer and scorer links
 //
-// POST needs the header `x-owner-key: <uuid>` (the scorer's device key).
+// GET is public. POST needs an umpire login; the umpire who creates a match is its only scorer.
 
 import { createMatch, listMatches, parseCreateMatchInput } from "@/lib/db/matches";
-import { errorResponse, ownerKeyFrom, readJson } from "@/lib/db/types";
+import { errorResponse, readJson } from "@/lib/db/types";
+import { requireUmpire } from "@/lib/supabase/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -19,10 +20,10 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const ownerKey = ownerKeyFrom(request);
+    const umpire = await requireUmpire();
     const input = parseCreateMatchInput(await readJson(request));
     const origin = new URL(request.url).origin;
-    const result = await createMatch(ownerKey, input, origin);
+    const result = await createMatch(umpire.id, input, origin);
     return Response.json(result, { status: 201 });
   } catch (e) {
     return errorResponse(e);

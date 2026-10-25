@@ -1,4 +1,5 @@
-// /umpire — the umpire's dashboard: their matches (live first), New match, and My teams.
+// /umpire — the umpire's dashboard: their matches (live first) with Score buttons, New match,
+// and My teams.
 // Only for logged-in umpires; everyone else is sent to the login page.
 
 import type { Metadata } from "next";
@@ -15,7 +16,7 @@ import { currentUmpire } from "@/lib/supabase/auth";
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "My matches" };
 
-/** Server action: move this phone's earlier matches to the logged-in umpire. */
+/** Server action: move this phone's earlier matches and teams to the logged-in umpire. */
 async function claim(deviceKey: string): Promise<number> {
   "use server";
   const umpire = await currentUmpire();
@@ -32,7 +33,17 @@ function Group({ title, matches }: { title: string; matches: MatchCardData[] }) 
       </h2>
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
         {matches.map((m) => (
-          <MatchCard key={m.id} match={m} />
+          <div key={m.id} className="flex flex-col gap-2">
+            <MatchCard match={m} />
+            <div className="grid grid-cols-2 gap-2">
+              <Link href={`/score/${m.id}`} className={buttonClasses(m.status === "finished" ? "secondary" : "primary", "md")}>
+                {m.status === "finished" ? "Open scorer" : m.status === "upcoming" ? "Start scoring" : "Score"}
+              </Link>
+              <Link href={`/match/${m.id}`} className={buttonClasses("secondary", "md")}>
+                Viewer page
+              </Link>
+            </div>
+          </div>
         ))}
       </div>
     </section>
