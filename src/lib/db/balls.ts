@@ -194,3 +194,36 @@ export async function saveBall(matchId: string, ball: BallEvent, clientId: strin
   const state = await refreshMatch(matchId, config, [...balls, ball]);
   return { state, duplicate: false };
 }
+
+/**
+ * Undo: deletes the match's last ball. `seq` must be the last ball's number, so an undo sent
+ * from an out-of-date phone can never delete the wrong ball.
+ */
+export async function undoLastBall(matchId: string, seq: number): Promise<MatchState> {
+  const db = getServerSupabase();
+  const { config, balls } = await loadScoringData(matchId);
+  const last = balls.at(-1);
+  if (!last) throw new ApiError(409, "There are no balls to undo.");
+  if (last.seq !== seq) throw new ApiError(409, "The score has changed. Reloading the latest score.");
+
+  const { error } = await db.from("balls").delete().eq("match_id", matchId).eq("seq", seq);
+  if (error) throw error;
+  return refreshMatch(matchId, config, balls.slice(0, -1));
+}
+
+/** "End innings": closes the given innings early (rain, light, a side calls it a day). */
+export async function endInnings(matchId: string, innings: 1 | 2): Promise<MatchState> {
+  const db = getServerSupabase();
+  const { match, config, balls } = await loadScoringData(matchId);
+  const state = computeState(config, balls);
+  if (state.status === "finished") throw new ApiError(409, "The match is already finished.");
+  if (state.innings !== innings || state.status === "innings_break") {
+    throw new ApiError(409, `Innings ${innings} is not in play.`);
+  }
+  if (!balls.some((b) => b.innings === innings)) throw new ApiError(400, "Bowl at least one ball before ending the innings.");
+
+  const ended = [...new Set([...match.ended_innings, innings])].sort() as (1 | 2)[];
+  const { error } = await db.from("matches").update({ ended_innings: ended }).eq("id", matchId);
+  if (error) throw error;
+  return refreshMatch(matchId, { ...config, endedInnings: ended }, balls);
+}

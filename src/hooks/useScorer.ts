@@ -8,9 +8,10 @@
 // reset themselves as soon as that ball is recorded.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { computeState, validateNext, type BallEvent, type MatchConfig, type MatchState } from "@/engine";
+import { ballChip, computeState, isLegal, totalRuns, validateNext, type BallEvent, type MatchConfig, type MatchState } from "@/engine";
 import { newId } from "@/lib/apiClient";
 import { BallQueue, type SyncStatus } from "@/lib/scorer/ballQueue";
+import { ballPhrase, getVoiceSetting, setVoiceSetting, speak, undoPhrase, type VoiceSetting } from "@/lib/scorer/voice";
 
 export interface BallInput {
   runsBat?: number;
@@ -43,18 +44,36 @@ interface Options {
   initialBalls: BallEvent[];
 }
 
-export function useScorer({ matchId, token, config, initialBalls }: Options) {
+/** A friendly message for a failed request: the browser's own "Failed to fetch" means no network. */
+function networkMessage(e: unknown, action: string): string {
+  if (e instanceof TypeError || (typeof navigator !== "undefined" && !navigator.onLine)) {
+    return `You're offline. ${action} needs the internet; try again when you're back online.`;
+  }
+  return e instanceof Error ? e.message : `Could not ${action.toLowerCase()}.`;
+}
+
+export function useScorer({ matchId, token, config: initialConfig, initialBalls }: Options) {
+  const [config, setConfig] = useState<MatchConfig>(initialConfig);
   const [balls, setBalls] = useState<BallEvent[]>(initialBalls);
   const [pick, setPick] = useState<Pick | null>(null);
-  const [sync, setSync] = useState<SyncStatus>({ kind: "saved" });
+  // "Checking…" until the queue has looked for unsent balls, so the badge never claims "Saved" too early.
+  const [sync, setSync] = useState<SyncStatus>({ kind: "sending", count: 0 });
   const [notice, setNotice] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [voice, setVoiceState] = useState<VoiceSetting>("en");
   const queueRef = useRef<BallQueue | null>(null);
   const ballsRef = useRef(balls);
   ballsRef.current = balls;
 
   const state: MatchState = useMemo(() => computeState(config, balls), [config, balls]);
 
-  /** Reload every ball from the server (after the server refused a ball). */
+  const nameOf = useMemo(() => {
+    const names = new Map([...config.teamA.players, ...config.teamB.players].map((p) => [p.id, p.name]));
+    return (id: string) => names.get(id) ?? "Unknown";
+  }, [config]);
+
+  /** Reload every ball from the server (after the server refused a ball, or an undo clash). */
   const reload = useCallback(async () => {
     try {
       const res = await fetch(`/api/balls?matchId=${matchId}`);
@@ -70,6 +89,7 @@ export function useScorer({ matchId, token, config, initialBalls }: Options) {
   // Start the queue once. Balls saved on this phone but not yet sent (e.g. the page was closed
   // while offline) are added back on top of what the server has.
   useEffect(() => {
+    setVoiceState(getVoiceSetting());
     const queue = new BallQueue({
       matchId,
       token,
@@ -102,6 +122,13 @@ export function useScorer({ matchId, token, config, initialBalls }: Options) {
       void lock?.release();
     };
   }, []);
+
+  // Toasts disappear after 3 seconds.
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 3000);
+    return () => clearTimeout(t);
+  }, [toast]);
 
   const activePick = pick && pick.forSeq === state.lastSeq ? pick : null;
 
@@ -145,10 +172,95 @@ export function useScorer({ matchId, token, config, initialBalls }: Options) {
       setBalls((prev) => [...prev, ball]);
       setPick(null);
       queueRef.current?.add({ clientId: newId(), ball });
+
+      const endsOver = isLegal(ball) && (state.score.legalBalls + 1) % 6 === 0;
+      const overRuns = endsOver ? state.thisOver.reduce((sum, c) => sum + c.runs, 0) + totalRuns(ball) : undefined;
+      speak(ballPhrase(ball, nameOf, voice, overRuns), voice);
       return null;
     },
-    [config, next, state],
+    [config, next, state, nameOf, voice],
   );
+
+  /**
+   * Undo the last ball. A ball still waiting on the phone is simply dropped; a ball the server
+   * already has is deleted there (only after every waiting ball has been sent, so they can't race).
+   */
+  const undo = useCallback(async () => {
+    const last = ballsRef.current.at(-1);
+    const queue = queueRef.current;
+    if (!last || !queue || busy) return;
+    setNotice(null);
+
+    const describe = (b: BallEvent) => {
+      const chip = ballChip(b);
+      return chip.kind === "dot" ? "dot ball" : chip.label;
+    };
+    const local = queue.pending().at(-1);
+    if (local && local.ball.seq === last.seq && queue.removeLast()) {
+      setBalls((prev) => prev.slice(0, -1));
+    } else {
+      setBusy(true);
+      try {
+        await queue.whenIdle();
+        const res = await fetch("/api/balls/undo", {
+          method: "POST",
+          headers: { "content-type": "application/json", "x-scoring-token": token },
+          body: JSON.stringify({ matchId, seq: last.seq }),
+        });
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        if (!res.ok) {
+          setNotice(data.error ?? "Could not undo.");
+          if (res.status === 409) await reload();
+          return;
+        }
+        setBalls((prev) => (prev.at(-1)?.seq === last.seq ? prev.slice(0, -1) : prev));
+      } catch (e) {
+        setNotice(networkMessage(e, "Undoing a saved ball"));
+        return;
+      } finally {
+        setBusy(false);
+      }
+    }
+    setPick(null);
+    navigator.vibrate?.([10, 40, 10]);
+    setToast(`Ball undone: ${describe(last)}`);
+    speak(undoPhrase(voice), voice);
+  }, [busy, matchId, reload, token, voice]);
+
+  /** End the current innings early. Needs the network; waiting balls are sent first. */
+  const endInnings = useCallback(async (): Promise<boolean> => {
+    const queue = queueRef.current;
+    if (!queue || busy) return false;
+    setBusy(true);
+    try {
+      await queue.whenIdle();
+      const res = await fetch(`/api/matches/${matchId}/end-innings`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-scoring-token": token },
+        body: JSON.stringify({ innings: state.innings }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        setNotice(data.error ?? "Could not end the innings.");
+        return false;
+      }
+      setConfig((c) => ({ ...c, endedInnings: [...new Set([...(c.endedInnings ?? []), state.innings])] }));
+      setPick(null);
+      setToast(`Innings ${state.innings} ended`);
+      return true;
+    } catch (e) {
+      setNotice(networkMessage(e, "Ending the innings"));
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  }, [busy, matchId, state.innings, token]);
+
+  const changeVoice = useCallback((v: VoiceSetting) => {
+    setVoiceSetting(v);
+    setVoiceState(v);
+    if (v !== "off") speak(v === "hi" ? "आवाज़ चालू" : "Voice on", v);
+  }, []);
 
   const swapStrike = useCallback(() => {
     setPick((p) => {
@@ -171,5 +283,25 @@ export function useScorer({ matchId, token, config, initialBalls }: Options) {
     [state.lastSeq],
   );
 
-  return { state, balls, next, sync, notice, setNotice, record, swapStrike, chooseBowler, startInnings, reload, queueRef };
+  return {
+    config,
+    state,
+    balls,
+    next,
+    nameOf,
+    sync,
+    notice,
+    setNotice,
+    toast,
+    busy,
+    voice,
+    record,
+    undo,
+    endInnings,
+    changeVoice,
+    swapStrike,
+    chooseBowler,
+    startInnings,
+    reload,
+  };
 }

@@ -17,12 +17,12 @@ const CHIP: Record<BallChip["kind"], string> = {
 function SyncBadge({ sync }: { sync: SyncStatus }) {
   const map = {
     saved: { dot: "bg-emerald-400", text: "Saved" },
-    sending: { dot: "bg-amber-300 animate-pulse", text: "Saving…" },
+    sending: { dot: "bg-amber-300 animate-pulse", text: sync.kind === "sending" && sync.count === 0 ? "Checking…" : "Saving…" },
     offline: { dot: "bg-amber-400", text: "Offline · will retry" },
     error: { dot: "bg-red-400", text: "Not saved" },
   } as const;
   const s = map[sync.kind];
-  const count = sync.kind === "sending" || sync.kind === "offline" ? ` (${sync.count})` : "";
+  const count = (sync.kind === "sending" || sync.kind === "offline") && sync.count > 0 ? ` (${sync.count})` : "";
   return (
     <span className="flex items-center gap-1.5 font-semibold" role="status">
       <span className={`size-2 rounded-full ${s.dot}`} aria-hidden="true" />
