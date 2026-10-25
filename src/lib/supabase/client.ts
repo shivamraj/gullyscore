@@ -1,7 +1,11 @@
-// Supabase client for the browser: read-only data and realtime subscriptions.
-// Uses the public anon key. Row-level security (supabase/schema.sql) allows reads only.
+// Supabase client for the browser: read-only data, realtime subscriptions, and the umpire's
+// Google sign-in. Uses the public anon key; row-level security (supabase/schema.sql) allows reads only.
+//
+// The login session is kept in cookies (not localStorage), so the server can also see who is
+// logged in: see src/lib/supabase/auth.ts.
 
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { createBrowserClient } from "@supabase/ssr";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 let browserClient: SupabaseClient | null = null;
 
@@ -16,8 +20,7 @@ export function getBrowserSupabase(): SupabaseClient {
     );
   }
 
-  browserClient = createClient(url, anonKey, {
-    auth: { persistSession: false },
+  browserClient = createBrowserClient(url, anonKey, {
     realtime: { params: { eventsPerSecond: 10 } },
   });
   return browserClient;

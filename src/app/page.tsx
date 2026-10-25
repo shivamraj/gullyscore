@@ -3,6 +3,8 @@
 // Home: every match, grouped into Live now, Upcoming and Recently finished, with search.
 // Scores on the cards update live (see src/lib/realtime.ts).
 // Phones show one column of cards; tablets two and desktops three.
+// Viewers never log in. Umpires use the "Umpire login" button (or "My matches" once logged in)
+// to reach their dashboard, where they create and score matches.
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
@@ -11,6 +13,7 @@ import { useMatchList } from "@/hooks/useMatchList";
 import { MatchCard } from "@/components/viewer/MatchCard";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import { buttonClasses } from "@/components/ui/Button";
+import { useUmpireSession } from "@/components/auth/AuthButtons";
 
 const RECENT_DAYS = 7;
 
@@ -48,6 +51,7 @@ function Section({ title, live, matches, empty }: { title: string; live?: boolea
 export default function HomePage() {
   const { matches, error } = useMatchList();
   const [query, setQuery] = useState("");
+  const session = useUmpireSession();
 
   const groups = useMemo(() => {
     const list = (matches ?? []).filter((m) => matchesSearch(m, query.trim()));
@@ -76,11 +80,15 @@ export default function HomePage() {
         </div>
         <div className="flex gap-2">
           <ThemeToggle />
-          <Link href="/match/new" className={buttonClasses("primary", "md", "px-3.5")}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
-              <path d="M12 5v14M5 12h14" />
+          <Link
+            href={session?.loggedIn ? "/umpire" : "/login"}
+            className={buttonClasses(session?.loggedIn ? "primary" : "secondary", "md", "px-3.5 whitespace-nowrap")}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <circle cx="12" cy="8" r="4" />
+              <path d="M4 21a8 8 0 0 1 16 0" />
             </svg>
-            New match
+            {session?.loggedIn ? "My matches" : "Umpire login"}
           </Link>
         </div>
       </header>
@@ -125,18 +133,14 @@ export default function HomePage() {
           {matches.length === 0 && (
             <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-line px-5 py-8 text-center">
               <p className="font-semibold">No matches yet</p>
-              <p className="text-sm text-ink-muted">Set up a match and share the link. Everyone can follow the score live.</p>
-              <Link href="/match/new" className={buttonClasses("primary", "md")}>
-                Start a match
+              <p className="text-sm text-ink-muted">Umpires log in to set up a match. Everyone can then follow the score live here.</p>
+              <Link href="/umpire" className={buttonClasses("primary", "md")}>
+                Umpire login
               </Link>
             </div>
           )}
         </>
       )}
-
-      <Link href="/teams" className="mt-auto text-center text-sm font-semibold text-pitch underline">
-        My teams
-      </Link>
     </main>
   );
 }
