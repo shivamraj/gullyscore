@@ -5,6 +5,7 @@
 
 import { answerQuestion, MAX_QUESTION_LENGTH, type HistoryTurn } from "@/lib/agent/agent";
 import type { AgentContext } from "@/lib/agent/tools";
+import { listBalls } from "@/lib/db/balls";
 import { getMatchConfig } from "@/lib/db/matches";
 import { ApiError, errorResponse, isUuid, readJson } from "@/lib/db/types";
 import { getServerSupabase } from "@/lib/supabase/server";
@@ -46,8 +47,10 @@ export async function POST(request: Request) {
     const viewer = request.headers.get("x-viewer-id") ?? request.headers.get("x-forwarded-for") ?? "anonymous";
     if (rateLimited(`${viewer}:${matchId}`)) throw new ApiError(429, "That's a lot of questions! Wait a minute and ask again.");
 
-    const { match, config } = await getMatchConfig(matchId);
-    const { data, error } = await getServerSupabase().from("match_state_cache").select("state").eq("match_id", matchId).maybeSingle();
+    const [{ match, config }, { data, error }] = await Promise.all([
+      getMatchConfig(matchId),
+      getServerSupabase().from("match_state_cache").select("state").eq("match_id", matchId).maybeSingle(),
+    ]);
     if (error) throw error;
     if (!data) throw new ApiError(404, "Match not found.");
     const state = data.state as MatchState;
@@ -59,6 +62,7 @@ export async function POST(request: Request) {
       return Response.json({ answer: hit.answer, asOf: state.score.overs, source: hit.source });
     }
 
+    const balls = await listBalls(matchId);
     const tossWinner = [config.teamA, config.teamB].find((t) => t.id === match.toss_winner)?.name ?? "";
     const ctx: AgentContext = {
       state,
@@ -66,6 +70,7 @@ export async function POST(request: Request) {
       overs: match.overs,
       tossLine: `${tossWinner} won the toss and chose to ${match.toss_decision}`,
       teams: [config.teamA, config.teamB].map((t) => ({ id: t.id, name: t.name, shortCode: t.shortCode, players: t.players })),
+      balls,
     };
     const answer = await answerQuestion(ctx, question, history);
     if (!history.length) cache.set(key, { answer: answer.text, source: answer.source, at: Date.now() });

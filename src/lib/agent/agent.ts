@@ -23,9 +23,9 @@ export interface Answer {
 }
 
 const FALLBACK: Record<Lang, string> = {
-  en: "I can answer questions like: What's the score? Who's batting? Who's bowling? Run rate? How many needed? Who's next? Partnership? Last over? Top scorer? How did a player get out?",
-  hinglish: "Main aise sawaalon ka jawaab de sakta hoon: score kya hai? Kaun bat kar raha hai? Kaun bowling kar raha hai? Run rate? Kitne run chahiye? Agla batter kaun? Partnership? Pichla over? Top scorer?",
-  hi: "मैं ऐसे सवालों का जवाब दे सकता हूँ: स्कोर क्या है? कौन बल्लेबाज़ी कर रहा है? कौन गेंदबाज़ी कर रहा है? रन रेट? कितने रन चाहिए? अगला बल्लेबाज़ कौन?",
+  en: "I can't answer that one yet. Try: What's the score? Who's batting? How many needed? Who's next? When was the last boundary? How many sixes? Last wicket? Last 6 balls? Top scorer? How did a player get out?",
+  hinglish: "Iska jawaab abhi nahi de sakta. Ye poochhein: score kya hai? Kaun bat kar raha hai? Kitne run chahiye? Agla batter kaun? Aakhri boundary kab lagi? Kitne chhakke? Aakhri wicket? Top scorer?",
+  hi: "इसका जवाब अभी नहीं दे सकता। ये पूछें: स्कोर क्या है? कौन बल्लेबाज़ी कर रहा है? कितने रन चाहिए? अगला बल्लेबाज़ कौन? आखिरी विकेट कब गिरा? कितने छक्के लगे?",
 };
 
 const BUSY: Record<Lang, string> = {

@@ -1,7 +1,7 @@
 // Read-only tools the agent uses to answer questions. Each one reads the calculated match state
 // and returns a small JSON object. None can change anything.
 
-import type { BallChip, BatterLine, BowlerLine, InningsState, MatchState } from "@/engine";
+import { ballChip, isLegal, type BallChip, type BallEvent, type BatterLine, type BowlerLine, type InningsState, type MatchState } from "@/engine";
 
 export interface AgentContext {
   state: MatchState;
@@ -9,6 +9,56 @@ export interface AgentContext {
   overs: number;
   tossLine: string;
   teams: { id: string; name: string; shortCode: string; players: { id: string; name: string }[] }[];
+  /** Every ball so far, in order. Lets the agent answer "when was the last boundary?". */
+  balls: BallEvent[];
+}
+
+export type BallKind = "four" | "six" | "boundary" | "wicket" | "extra" | "all";
+
+export interface TimelineBall {
+  innings: 1 | 2;
+  /** Cricket notation: "2.4" = 3rd over, 4th ball. Wides and no balls share the next ball's number. */
+  over: string;
+  batter: string;
+  bowler: string;
+  /** As on the scoreboard: •, 1, 4, 6, W, Wd, Nb+4, 2B … */
+  result: string;
+  kind: BallChip["kind"];
+  runs: number;
+  /** For wickets: who was out and how. */
+  out?: string;
+}
+
+/** Every ball with its over number, batter and bowler, oldest first. */
+export function ballTimeline(ctx: AgentContext): TimelineBall[] {
+  const legalSoFar: Record<number, number> = { 1: 0, 2: 0 };
+  const sorted = [...ctx.balls].sort((a, b) => a.seq - b.seq);
+  return sorted.map((b) => {
+    const done = legalSoFar[b.innings]!;
+    if (isLegal(b)) legalSoFar[b.innings] = done + 1;
+    const chip = ballChip(b);
+    const ball: TimelineBall = {
+      innings: b.innings,
+      over: `${Math.floor(done / 6)}.${(done % 6) + 1}`,
+      batter: playerName(ctx, b.striker),
+      bowler: playerName(ctx, b.bowler),
+      result: chip.label,
+      kind: chip.kind,
+      runs: chip.runs,
+    };
+    if (b.wicket) {
+      const out = ctx.state.inningsList[b.innings - 1]?.batting.find((x) => x.playerId === b.wicket!.playerOut);
+      ball.out = `${playerName(ctx, b.wicket.playerOut)} ${out?.howOut ?? b.wicket.type}`;
+    }
+    return ball;
+  });
+}
+
+/** Does this ball count as the kind asked for? A boundary is a four or a six off the bat. */
+export function isKind(ball: TimelineBall, kind: BallKind): boolean {
+  if (kind === "all") return true;
+  if (kind === "boundary") return ball.kind === "four" || ball.kind === "six";
+  return ball.kind === kind;
 }
 
 type Json = Record<string, unknown>;
@@ -20,9 +70,11 @@ export interface ToolDef {
   run: (ctx: AgentContext, args: Json) => Json;
 }
 
+function playerName(ctx: AgentContext, id: string): string {
+  return ctx.teams.flatMap((t) => t.players).find((p) => p.id === id)?.name ?? "Unknown";
+}
+
 const teamName = (ctx: AgentContext, id: string) => ctx.teams.find((t) => t.id === id)?.name ?? "Unknown";
-const playerName = (ctx: AgentContext, id: string) =>
-  ctx.teams.flatMap((t) => t.players).find((p) => p.id === id)?.name ?? "Unknown";
 
 const batter = (b: BatterLine | null) =>
   b && { name: b.name, runs: b.runs, balls: b.balls, fours: b.fours, sixes: b.sixes, strike_rate: b.strikeRate, out: b.out, how_out: b.howOut };
@@ -115,6 +167,29 @@ export const TOOLS: ToolDef[] = [
       if (args.which === "current") return { balls: balls(s.thisOver), runs: s.thisOver.reduce((n, c) => n + c.runs, 0) };
       const o = s.lastOver;
       return o ? { over_number: o.number, bowler: playerName(ctx, o.bowler), balls: balls(o.chips), runs: o.runs, wickets: o.wickets } : { over: null };
+    },
+  },
+  {
+    name: "get_ball_by_ball",
+    description:
+      "Every ball of the match (or of one innings) with over number, batter, bowler and result. Filter by kind to find fours, sixes, boundaries, wickets or extras, e.g. the last boundary or how many sixes were hit. Newest balls are last.",
+    parameters: {
+      type: "object",
+      properties: {
+        kind: { type: "string", enum: ["all", "boundary", "four", "six", "wicket", "extra"] },
+        innings: { type: "integer", enum: [1, 2] },
+        last: { type: "integer", description: "Only the most recent N matching balls (default 30)." },
+      },
+    },
+    run: (ctx, args) => {
+      const kind = (args.kind as BallKind | undefined) ?? "all";
+      const list = ballTimeline(ctx).filter((b) => (args.innings === undefined || b.innings === args.innings) && isKind(b, kind));
+      const last = typeof args.last === "number" && args.last > 0 ? Math.min(args.last, 60) : 30;
+      return {
+        kind,
+        total_matching: list.length,
+        balls: list.slice(-last).map((b) => ({ innings: b.innings, over: b.over, batter: b.batter, bowler: b.bowler, result: b.result, ...(b.out ? { out: b.out } : {}) })),
+      };
     },
   },
   {
