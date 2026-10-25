@@ -16,6 +16,7 @@
   --line: #d9ded6;       /* borders */
   --pitch: #0b7a4b;      /* brand green: buttons, links */
   --pitch-soft: #eaf5ef;
+  --on-pitch: #ffffff;   /* text on pitch-green buttons */
   --gold: #e8a317;       /* fours and sixes */
   --gold-ink: #7a4f00;   /* text on light gold */
   --wicket: #c8322b;     /* wickets, LIVE */
@@ -33,6 +34,7 @@
     --line: #26332c;
     --pitch: #2fbf71;
     --pitch-soft: #0f2a1e;
+    --on-pitch: #06140d;
     --gold: #f5b935;
     --gold-ink: #f5b935;
     --wicket: #ff5a4e;
@@ -50,6 +52,7 @@
   --line: #26332c;
   --pitch: #2fbf71;
   --pitch-soft: #0f2a1e;
+  --on-pitch: #06140d;
   --gold: #f5b935;
   --gold-ink: #f5b935;
   --wicket: #ff5a4e;
@@ -70,6 +73,7 @@
   --color-line: var(--line);
   --color-pitch: var(--pitch);
   --color-pitch-soft: var(--pitch-soft);
+  --color-on-pitch: var(--on-pitch);
   --color-gold: var(--gold);
   --color-gold-ink: var(--gold-ink);
   --color-wicket: var(--wicket);
