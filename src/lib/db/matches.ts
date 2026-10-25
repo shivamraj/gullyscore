@@ -324,7 +324,8 @@ function one<T>(v: T | T[] | null | undefined): T | null {
 }
 
 /** Matches for the home page, newest first. Pass a status to filter (e.g. "live"). */
-export async function listMatches(status?: string, limit = 50): Promise<MatchCard[]> {
+/** Matches for the home page (everyone's), or one umpire's matches when `ownerId` is given. */
+export async function listMatches(status?: string, limit = 50, ownerId?: string): Promise<MatchCard[]> {
   if (status !== undefined && !STATUSES.includes(status as MatchStatus)) {
     throw new ApiError(400, `status must be one of: ${STATUSES.join(", ")}.`);
   }
@@ -340,6 +341,7 @@ export async function listMatches(status?: string, limit = 50): Promise<MatchCar
     .order("created_at", { ascending: false })
     .limit(limit);
   if (status) q = q.eq("status", status);
+  if (ownerId) q = q.eq("owner_key", ownerId);
 
   const { data, error } = await q;
   if (error) throw error;
@@ -361,4 +363,16 @@ export async function listMatches(status?: string, limit = 50): Promise<MatchCar
       state: cache?.state ?? null,
     };
   });
+}
+
+/**
+ * Moves matches created on this device (before logins existed) to the umpire's account, so they
+ * show on their dashboard. `owner_key` holds the umpire's user id from now on. Runs on every
+ * dashboard visit; does nothing once a device's matches have moved. Returns how many moved.
+ */
+export async function claimDeviceMatches(userId: string, deviceKey: string): Promise<number> {
+  if (!isUuid(userId) || !isUuid(deviceKey) || userId === deviceKey) return 0;
+  const { data, error } = await getServerSupabase().from("matches").update({ owner_key: userId }).eq("owner_key", deviceKey).select("id");
+  if (error) throw error;
+  return data?.length ?? 0;
 }
