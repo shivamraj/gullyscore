@@ -1,6 +1,7 @@
 "use client";
 
-// /teams — the scorer's saved teams. Create a team, or tap one to edit its players.
+// /teams — the umpire's saved teams. Create a team, or tap one to edit its players.
+// Umpires only: the API answers 401 when logged out, and api() then opens the login page.
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -28,7 +29,7 @@ export default function TeamsPage() {
   return (
     <main className="mx-auto flex min-h-dvh max-w-md flex-col gap-4 px-4 py-5">
       <header className="flex items-center gap-3">
-        <Link href="/" aria-label="Back to home" className={buttonClasses("secondary", "md", "w-11 px-0")}>
+        <Link href="/umpire" aria-label="Back to my matches" className={buttonClasses("secondary", "md", "w-11 px-0")}>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
             <path d="M15 18l-6-6 6-6" />
           </svg>

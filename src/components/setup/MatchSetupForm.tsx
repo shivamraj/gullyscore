@@ -5,9 +5,10 @@
 //   2. Today's players (pick from the saved squad, add guests)
 //   3. Toss
 //   4. Batting order, openers and opening bowler
-// Then: the viewer link to share, and the secret scoring link.
+// Then straight to the scorer screen, which offers to share the viewer link.
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { api, newId } from "@/lib/apiClient";
 import type { CreateMatchResult, PlayerInput, Team } from "@/lib/db/types";
@@ -304,7 +305,7 @@ export function MatchSetupForm() {
   const [step, setStep] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [result, setResult] = useState<CreateMatchResult | null>(null);
+  const router = useRouter();
 
   const [title, setTitle] = useState("");
   const [venue, setVenue] = useState("");
@@ -398,20 +399,19 @@ export function MatchSetupForm() {
         toss,
         openers: { striker: orders[battingIndex as 0 | 1][0], nonStriker: orders[battingIndex as 0 | 1][1], bowler },
       };
-      setResult(await api<CreateMatchResult>("/api/matches", { method: "POST", body }));
+      const created = await api<CreateMatchResult>("/api/matches", { method: "POST", body });
+      // Stay "submitting" while the scorer screen loads, so the button can't be tapped twice.
+      router.replace(`/score/${created.matchId}?new=1`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not create the match.");
-    } finally {
       setSubmitting(false);
     }
   }
 
-  if (result) return <MatchCreated result={result} title={title} />;
-
   return (
     <div className="flex min-h-dvh flex-col">
       <header className="flex items-center gap-3 px-4 pt-4 pb-2">
-        <Link href="/" aria-label="Cancel setup" className={buttonClasses("secondary", "md", "w-11 px-0")}>
+        <Link href="/umpire" aria-label="Cancel setup" className={buttonClasses("secondary", "md", "w-11 px-0")}>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
             <path d="M6 6l12 12M18 6L6 18" />
           </svg>
@@ -597,65 +597,5 @@ export function MatchSetupForm() {
         )}
       </footer>
     </div>
-  );
-}
-
-// ---------- after creating ----------
-
-function CopyRow({ label, url, note }: { label: string; url: string; note: string }) {
-  const [copied, setCopied] = useState(false);
-  return (
-    <div className="flex flex-col gap-2 rounded-2xl border border-line bg-surface p-4">
-      <span className="text-sm font-bold text-ink-muted">{label}</span>
-      <code className="break-all rounded-lg bg-surface-2 px-3 py-2 text-sm">{url}</code>
-      <p className="text-sm text-ink-muted">{note}</p>
-      <div className="flex gap-2">
-        <Button
-          variant="secondary"
-          className="flex-1"
-          onClick={async () => {
-            try {
-              await navigator.clipboard.writeText(url);
-              setCopied(true);
-              setTimeout(() => setCopied(false), 2000);
-            } catch {
-              window.prompt("Copy this link:", url);
-            }
-          }}
-        >
-          {copied ? "Copied" : "Copy link"}
-        </Button>
-        <a
-          href={`https://wa.me/?text=${encodeURIComponent(url)}`}
-          target="_blank"
-          rel="noreferrer"
-          className={buttonClasses("secondary", "md", "flex-1")}
-        >
-          Share on WhatsApp
-        </a>
-      </div>
-    </div>
-  );
-}
-
-function MatchCreated({ result, title }: { result: CreateMatchResult; title: string }) {
-  return (
-    <main className="mx-auto flex min-h-dvh max-w-md flex-col gap-4 px-4 py-6">
-      <div className="flex flex-col gap-1">
-        <p className="text-sm font-bold text-pitch">Match created</p>
-        <h1 className="text-2xl font-bold">{title}</h1>
-      </div>
-      <CopyRow label="Viewer link" url={result.viewerUrl} note="Share with everyone. They can follow the live score and ask questions." />
-      <CopyRow
-        label="Scoring link (keep it private)"
-        url={result.scoringUrl}
-        note="Anyone with this link can score the match. Save it now: it is shown only once."
-      />
-      <div className="mt-auto flex flex-col gap-2">
-        <Link href="/" className={buttonClasses("secondary", "lg")}>
-          Back to home
-        </Link>
-      </div>
-    </main>
   );
 }

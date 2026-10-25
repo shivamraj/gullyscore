@@ -39,7 +39,6 @@ export interface NextBall {
 
 interface Options {
   matchId: string;
-  token: string;
   config: MatchConfig;
   initialBalls: BallEvent[];
 }
@@ -52,7 +51,15 @@ function networkMessage(e: unknown, action: string): string {
   return e instanceof Error ? e.message : `Could not ${action.toLowerCase()}.`;
 }
 
-export function useScorer({ matchId, token, config: initialConfig, initialBalls }: Options) {
+/**
+ * The umpire's login ran out mid-match: go and log in again, then come back to this scorer.
+ * Balls not yet saved stay in this phone's queue and are sent on return.
+ */
+function toLogin(matchId: string) {
+  window.location.assign(`/login?next=${encodeURIComponent(`/score/${matchId}`)}`);
+}
+
+export function useScorer({ matchId, config: initialConfig, initialBalls }: Options) {
   const [config, setConfig] = useState<MatchConfig>(initialConfig);
   const [balls, setBalls] = useState<BallEvent[]>(initialBalls);
   const [pick, setPick] = useState<Pick | null>(null);
@@ -92,8 +99,8 @@ export function useScorer({ matchId, token, config: initialConfig, initialBalls 
     setVoiceState(getVoiceSetting());
     const queue = new BallQueue({
       matchId,
-      token,
       onStatus: setSync,
+      onLoggedOut: () => toLogin(matchId),
       onRejected: (message) => {
         setNotice(`${message} Showing the latest saved score.`);
         void reload();
@@ -107,7 +114,7 @@ export function useScorer({ matchId, token, config: initialConfig, initialBalls 
     queue.start();
     return () => queue.stop();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [matchId, token]);
+  }, [matchId]);
 
   // Keep the screen on while scoring.
   useEffect(() => {
@@ -204,10 +211,11 @@ export function useScorer({ matchId, token, config: initialConfig, initialBalls 
         await queue.whenIdle();
         const res = await fetch("/api/balls/undo", {
           method: "POST",
-          headers: { "content-type": "application/json", "x-scoring-token": token },
+          headers: { "content-type": "application/json" },
           body: JSON.stringify({ matchId, seq: last.seq }),
         });
         const data = (await res.json().catch(() => ({}))) as { error?: string };
+        if (res.status === 401) return toLogin(matchId);
         if (!res.ok) {
           setNotice(data.error ?? "Could not undo.");
           if (res.status === 409) await reload();
@@ -225,7 +233,7 @@ export function useScorer({ matchId, token, config: initialConfig, initialBalls 
     navigator.vibrate?.([10, 40, 10]);
     setToast(`Ball undone: ${describe(last)}`);
     speak(undoPhrase(voice), voice);
-  }, [busy, matchId, reload, token, voice]);
+  }, [busy, matchId, reload, voice]);
 
   /** End the current innings early. Needs the network; waiting balls are sent first. */
   const endInnings = useCallback(async (): Promise<boolean> => {
@@ -236,10 +244,14 @@ export function useScorer({ matchId, token, config: initialConfig, initialBalls 
       await queue.whenIdle();
       const res = await fetch(`/api/matches/${matchId}/end-innings`, {
         method: "POST",
-        headers: { "content-type": "application/json", "x-scoring-token": token },
+        headers: { "content-type": "application/json" },
         body: JSON.stringify({ innings: state.innings }),
       });
       const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (res.status === 401) {
+        toLogin(matchId);
+        return false;
+      }
       if (!res.ok) {
         setNotice(data.error ?? "Could not end the innings.");
         return false;
@@ -254,7 +266,7 @@ export function useScorer({ matchId, token, config: initialConfig, initialBalls 
     } finally {
       setBusy(false);
     }
-  }, [busy, matchId, state.innings, token]);
+  }, [busy, matchId, state.innings]);
 
   const changeVoice = useCallback((v: VoiceSetting) => {
     setVoiceSetting(v);

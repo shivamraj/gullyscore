@@ -108,7 +108,7 @@ export interface CreateMatchInput {
 export interface CreateMatchResult {
   matchId: string;
   viewerUrl: string;
-  /** Contains the secret scoring token. Shown once; anyone with it can score. */
+  /** The scorer screen. Only the umpire who created the match can use it (no secret token). */
   scoringUrl: string;
 }
 
@@ -211,11 +211,4 @@ export async function readJson(request: Request): Promise<unknown> {
   } catch {
     throw new ApiError(400, "Request body must be valid JSON.");
   }
-}
-
-/** The scorer's device key, sent in the `x-owner-key` header. */
-export function ownerKeyFrom(request: Request): string {
-  const key = request.headers.get("x-owner-key");
-  if (!isUuid(key)) throw new ApiError(401, "Missing or invalid x-owner-key header.");
-  return key;
 }
