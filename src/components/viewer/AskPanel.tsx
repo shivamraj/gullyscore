@@ -1,7 +1,9 @@
 "use client";
 
-// Chat panel for asking about the match. Slides up over about two-thirds of the screen so the
-// score stays visible above it. Quick-question chips for the common questions.
+// Chat panel for asking about the match. On phones it slides up over about two-thirds of the
+// screen so the score stays visible above it. On tablets and desktop (768 px and wider) it opens
+// as a chat window in the bottom-right corner, beside the scoreboard. Quick-question chips for
+// the common questions.
 
 import { useEffect, useRef, useState } from "react";
 import { newId } from "@/lib/apiClient";
@@ -72,15 +74,15 @@ export function AskPanel({ matchId, onClose }: { matchId: string; onClose: () =>
   }
 
   return (
-    <div className="fixed inset-0 z-40 flex flex-col justify-end bg-black/35" onClick={onClose}>
+    <div className="fixed inset-0 z-40 flex flex-col justify-end bg-black/35 md:items-end md:bg-black/10 md:p-6" onClick={onClose}>
       <section
         role="dialog"
         aria-modal="true"
         aria-label="Ask about the match"
         onClick={(e) => e.stopPropagation()}
-        className="mx-auto flex h-[68dvh] w-full max-w-md flex-col rounded-t-3xl border-t border-line bg-surface shadow-[0_-12px_40px_rgba(0,0,0,0.25)]"
+        className="mx-auto flex h-[68dvh] w-full max-w-md flex-col rounded-t-3xl border-t border-line bg-surface shadow-[0_-12px_40px_rgba(0,0,0,0.25)] md:mx-0 md:h-[min(640px,calc(100dvh-48px))] md:w-[400px] md:rounded-3xl md:border md:shadow-[0_16px_48px_rgba(0,0,0,0.25)]"
       >
-        <span className="mx-auto mt-2.5 h-1.5 w-10 rounded-full bg-line" aria-hidden="true" />
+        <span className="mx-auto mt-2.5 h-1.5 w-10 rounded-full bg-line md:invisible" aria-hidden="true" />
         <div className="flex items-center justify-between px-5 pt-2 pb-3">
           <div>
             <h2 className="text-lg font-bold">Ask about the match</h2>

@@ -2,6 +2,7 @@
 
 // Home: every match, grouped into Live now, Upcoming and Recently finished, with search.
 // Scores on the cards update live (see src/lib/realtime.ts).
+// Phones show one column of cards; tablets two and desktops three.
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
@@ -32,7 +33,11 @@ function Section({ title, live, matches, empty }: { title: string; live?: boolea
         {matches.length > 0 && ` · ${matches.length}`}
       </h2>
       {matches.length ? (
-        matches.map((m) => <MatchCard key={m.id} match={m} />)
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+          {matches.map((m) => (
+            <MatchCard key={m.id} match={m} />
+          ))}
+        </div>
       ) : (
         <p className="rounded-2xl border border-dashed border-line px-4 py-5 text-center text-sm text-ink-muted">{empty}</p>
       )}
@@ -57,7 +62,7 @@ export default function HomePage() {
   const nothingFound = matches && query && !groups.live.length && !groups.upcoming.length && !groups.finished.length;
 
   return (
-    <main className="mx-auto flex min-h-dvh max-w-md flex-col gap-5 px-5 pt-5 pb-10">
+    <main className="mx-auto flex min-h-dvh max-w-md flex-col gap-5 px-5 pt-5 pb-10 md:max-w-3xl md:px-8 lg:max-w-6xl">
       <header className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2.5">
           <span className="flex size-9 items-center justify-center rounded-[10px] bg-pitch" aria-hidden="true">
@@ -80,7 +85,7 @@ export default function HomePage() {
         </div>
       </header>
 
-      <div className="flex h-12 items-center gap-2.5 rounded-xl border border-line bg-surface px-3.5">
+      <div className="flex h-12 items-center gap-2.5 rounded-xl border border-line bg-surface px-3.5 md:max-w-md">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-ink-muted" aria-hidden="true">
           <circle cx="11" cy="11" r="7" />
           <path d="M20 20l-3.5-3.5" />
@@ -104,7 +109,7 @@ export default function HomePage() {
         </p>
       )}
       {!matches && !error && (
-        <div className="flex flex-col gap-3" aria-label="Loading matches">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2" aria-label="Loading matches">
           {[0, 1].map((i) => (
             <div key={i} className="h-40 animate-pulse rounded-2xl bg-surface-2" />
           ))}

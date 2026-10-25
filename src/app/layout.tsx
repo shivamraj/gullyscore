@@ -19,7 +19,16 @@ export const metadata: Metadata = {
   },
   description:
     "Live ball-by-ball scoring for local cricket. Follow the score and ask the AI agent anything about the match.",
+  applicationName: "GullyScore",
+  // iPhone / iPad: open full screen when added to the home screen (manifest.ts does this elsewhere).
+  appleWebApp: { capable: true, title: "GullyScore", statusBarStyle: "default" },
+  formatDetection: { telephone: false },
 };
+
+// Installable app (PLT-06): register the service worker (public/sw.js) in production builds only,
+// so `npm run dev` never serves stale cached pages while you're coding.
+const REGISTER_SW =
+  "if('serviceWorker' in navigator){addEventListener('load',function(){navigator.serviceWorker.register('/sw.js').catch(function(){})})}";
 
 export const viewport: Viewport = {
   width: "device-width",
@@ -36,6 +45,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" suppressHydrationWarning>
       <head>
         <ThemeScript />
+        {process.env.NODE_ENV === "production" && <script dangerouslySetInnerHTML={{ __html: REGISTER_SW }} />}
       </head>
       <body className="min-h-dvh">{children}</body>
     </html>
