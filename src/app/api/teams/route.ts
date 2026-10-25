@@ -1,17 +1,18 @@
-// GET  /api/teams  → this device's saved teams with players
+// GET  /api/teams  → the logged-in umpire's saved teams with players
 // POST /api/teams  → create a team, or update one (when the body has an `id`)
 //
-// Both need the header `x-owner-key: <uuid>`: a random key the app keeps on the scorer's device.
+// Both need an umpire login. Teams belong to the umpire (their user id is the team's owner_key).
 
 import { listTeams, parseSaveTeamInput, saveTeam } from "@/lib/db/teams";
-import { errorResponse, ownerKeyFrom, readJson } from "@/lib/db/types";
+import { errorResponse, readJson } from "@/lib/db/types";
+import { requireUmpire } from "@/lib/supabase/auth";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(request: Request) {
+export async function GET() {
   try {
-    const ownerKey = ownerKeyFrom(request);
-    return Response.json({ teams: await listTeams(ownerKey) });
+    const umpire = await requireUmpire();
+    return Response.json({ teams: await listTeams(umpire.id) });
   } catch (e) {
     return errorResponse(e);
   }
@@ -19,9 +20,9 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const ownerKey = ownerKeyFrom(request);
+    const umpire = await requireUmpire();
     const input = parseSaveTeamInput(await readJson(request));
-    const team = await saveTeam(ownerKey, input);
+    const team = await saveTeam(umpire.id, input);
     return Response.json({ team }, { status: input.id ? 200 : 201 });
   } catch (e) {
     return errorResponse(e);

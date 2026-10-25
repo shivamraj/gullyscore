@@ -1,8 +1,8 @@
-// Saving balls: check the scoring token, validate the ball with the engine, store it,
+// Saving balls: check the umpire is logged in and owns the match, validate the ball with the engine, store it,
 // then refresh the cached state and the match status.
 
-import { createHash, timingSafeEqual } from "node:crypto";
 import { computeState, validateNext, type BallEvent, type MatchConfig, type MatchState } from "@/engine";
+import { requireUmpire, type Umpire } from "@/lib/supabase/auth";
 import { getServerSupabase } from "@/lib/supabase/server";
 import { getMatchConfig } from "./matches";
 import { ApiError, isUuid, type MatchRow } from "./types";
@@ -64,29 +64,21 @@ function ballToRow(matchId: string, b: BallEvent, clientId: string) {
   };
 }
 
-// ---------- scoring token ----------
+// ---------- who may score ----------
 
-function sha256(text: string): Buffer {
-  return createHash("sha256").update(text).digest();
-}
-
-/** True if this token is the match's scoring token. Compares hashes in constant time. */
-export async function isValidScoringToken(matchId: string, token: string | null | undefined): Promise<boolean> {
-  if (!isUuid(matchId) || !token || token.length > 100) return false;
-  const { data, error } = await getServerSupabase()
-    .from("matches")
-    .select("scoring_token_hash")
-    .eq("id", matchId)
-    .maybeSingle();
+/** True if this user created the match. Only they can score it. */
+export async function isMatchOwner(matchId: string, userId: string): Promise<boolean> {
+  if (!isUuid(matchId) || !isUuid(userId)) return false;
+  const { data, error } = await getServerSupabase().from("matches").select("owner_key").eq("id", matchId).maybeSingle();
   if (error) throw error;
-  if (!data) return false;
-  const stored = Buffer.from(data.scoring_token_hash as string, "hex");
-  const given = sha256(token);
-  return stored.length === given.length && timingSafeEqual(stored, given);
+  return data?.owner_key === userId;
 }
 
-export async function requireScoringToken(matchId: string, token: string | null | undefined): Promise<void> {
-  if (!(await isValidScoringToken(matchId, token))) throw new ApiError(403, "This scoring link is not valid.");
+/** The logged-in umpire, if they created this match: 401 when not logged in, 403 for anyone else. */
+export async function requireScorer(matchId: string): Promise<Umpire> {
+  const umpire = await requireUmpire();
+  if (!(await isMatchOwner(matchId, umpire.id))) throw new ApiError(403, "Only the umpire who created this match can score it.");
+  return umpire;
 }
 
 // ---------- reading ----------

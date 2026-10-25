@@ -1,9 +1,9 @@
 // GET  /api/balls?matchId=…            → all balls of a match (the scorer reloads with this)
 // POST /api/balls { matchId, clientId, ball } → save one ball
 //
-// POST needs the header `x-scoring-token: <token from the scoring link>`.
+// POST needs the logged-in umpire who created the match.
 
-import { listBalls, parseBall, requireScoringToken, saveBall } from "@/lib/db/balls";
+import { listBalls, parseBall, requireScorer, saveBall } from "@/lib/db/balls";
 import { ApiError, errorResponse, isUuid, readJson } from "@/lib/db/types";
 
 export const dynamic = "force-dynamic";
@@ -23,7 +23,7 @@ export async function POST(request: Request) {
     const body = (await readJson(request)) as Record<string, unknown>;
     const matchId = body?.matchId;
     if (!isUuid(matchId)) throw new ApiError(400, "matchId is required.");
-    await requireScoringToken(matchId, request.headers.get("x-scoring-token"));
+    await requireScorer(matchId);
 
     const ball = parseBall(body.ball);
     const result = await saveBall(matchId, ball, String(body.clientId ?? ""));
