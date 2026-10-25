@@ -9,6 +9,7 @@ import type { MatchStatus } from "@/engine";
 import { useLiveMatch } from "@/hooks/useLiveMatch";
 import type { StateRow } from "@/lib/realtime";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
+import { AskButton } from "./AskButton";
 import { BattersCard } from "./BattersCard";
 import { BowlerCard } from "./BowlerCard";
 import { FullScorecard } from "./FullScorecard";
@@ -119,6 +120,8 @@ export function Scoreboard({ matchId, title, venue, overs, tossLine, teams, init
       ) : (
         <FullScorecard state={state} teams={byId} />
       )}
+
+      <AskButton matchId={matchId} />
     </main>
   );
 }
