@@ -3,6 +3,10 @@
 // The scorer screen: top strip + button grid, with sheets for extras, wickets, the next bowler,
 // the start of the second innings and the More menu. Undo is always one tap away: in the grid,
 // above the bowler / innings sheets, and on the result screen.
+//
+// Layout: one column on phones held upright (wider on tablets). In landscape on a phone, tablet
+// or laptop (768 px and wider), the summary sits on the left and the buttons on the right, so
+// everything fits on one screen without scrolling.
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
@@ -69,42 +73,43 @@ export function ScorerPanel({ matchId, token, title, config: initialConfig, init
   );
 
   return (
-    <div className="mx-auto flex min-h-dvh max-w-md flex-col">
-      <TopStrip title={title} state={state} next={next} nameOf={nameOf} sync={sync} />
+    <div className="mx-auto flex min-h-dvh max-w-md flex-col md:max-w-2xl md:landscape:grid md:landscape:h-dvh md:landscape:max-w-6xl md:landscape:grid-cols-2">
+      <TopStrip matchId={matchId} title={title} state={state} next={next} nameOf={nameOf} sync={sync} />
+      <div className="flex flex-1 flex-col md:landscape:min-h-0 md:landscape:overflow-y-auto">
+        {notice && (
+          <div role="alert" className="mx-4 mt-3 flex items-start gap-3 rounded-xl bg-wicket/10 px-3 py-2.5 text-sm font-semibold text-wicket">
+            <span className="flex-1">{notice}</span>
+            <button type="button" onClick={() => setNotice(null)} aria-label="Dismiss" className="font-bold">
+              ×
+            </button>
+          </div>
+        )}
 
-      {notice && (
-        <div role="alert" className="mx-4 mt-3 flex items-start gap-3 rounded-xl bg-wicket/10 px-3 py-2.5 text-sm font-semibold text-wicket">
-          <span className="flex-1">{notice}</span>
-          <button type="button" onClick={() => setNotice(null)} aria-label="Dismiss" className="font-bold">
-            ×
-          </button>
-        </div>
-      )}
-
-      {finished ? (
-        <section className="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
-          <p className="text-sm font-bold text-pitch">MATCH OVER</p>
-          <h2 className="text-2xl font-bold">{state.result}</h2>
-          <Link href={`/match/${matchId}`} className={buttonClasses("secondary", "lg")}>
-            Open the viewer page
-          </Link>
-          <Button variant="ghost" disabled={!canUndo} onClick={() => void scorer.undo()}>
-            <UndoIcon />
-            Undo last ball
-          </Button>
-        </section>
-      ) : (
-        <ButtonGrid
-          disabled={blocked}
-          onRuns={(runs) => scorer.record({ runsBat: runs })}
-          onExtra={(type) => setExtra(type)}
-          onWicket={() => setWicketOpen(true)}
-          onUndo={canUndo ? () => void scorer.undo() : undefined}
-          onSwap={scorer.swapStrike}
-          onChangeBowler={() => setChangingBowler(true)}
-          onMore={() => setMoreOpen(true)}
-        />
-      )}
+        {finished ? (
+          <section className="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
+            <p className="text-sm font-bold text-pitch">MATCH OVER</p>
+            <h2 className="text-2xl font-bold">{state.result}</h2>
+            <Link href={`/match/${matchId}`} className={buttonClasses("secondary", "lg")}>
+              Open the viewer page
+            </Link>
+            <Button variant="ghost" disabled={!canUndo} onClick={() => void scorer.undo()}>
+              <UndoIcon />
+              Undo last ball
+            </Button>
+          </section>
+        ) : (
+          <ButtonGrid
+            disabled={blocked}
+            onRuns={(runs) => scorer.record({ runsBat: runs })}
+            onExtra={(type) => setExtra(type)}
+            onWicket={() => setWicketOpen(true)}
+            onUndo={canUndo ? () => void scorer.undo() : undefined}
+            onSwap={scorer.swapStrike}
+            onChangeBowler={() => setChangingBowler(true)}
+            onMore={() => setMoreOpen(true)}
+          />
+        )}
+      </div>
 
       {toast && (
         <div role="status" className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-full bg-ink px-5 py-3 text-sm font-semibold text-ground shadow-lg">

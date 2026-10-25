@@ -8,6 +8,7 @@
 
 import type { MatchState } from "@/engine";
 import { getBrowserSupabase } from "@/lib/supabase/client";
+import { countViewers } from "@/lib/fx/events";
 
 export interface StateRow {
   state: MatchState;
@@ -100,6 +101,32 @@ export function watchMatchList(onChange: () => void): Stop {
     clearInterval(timer);
     if (pending) clearTimeout(pending);
     document.removeEventListener("visibilitychange", onVisible);
+    void sb.removeChannel(channel);
+  };
+}
+
+/**
+ * Live viewer count (VIEW-09, SCR-16), using Supabase Realtime presence: every open viewer tab
+ * joins the match's presence channel, so nothing is stored in the database. The scorer joins
+ * as "scorer" and isn't counted. Calls `onCount` with the number of viewers, or null when
+ * presence can't connect (the count is then hidden rather than wrong).
+ */
+export function watchViewers(matchId: string, role: "viewer" | "scorer", onCount: (count: number | null) => void): Stop {
+  const sb = getBrowserSupabase();
+  const key = `${role}-${Math.random().toString(36).slice(2)}-${Date.now().toString(36)}`;
+  const channel = sb.channel(`viewers:${matchId}`, { config: { presence: { key } } });
+
+  channel
+    .on("presence", { event: "sync" }, () => {
+      onCount(countViewers(channel.presenceState<{ role?: string }>()));
+    })
+    .subscribe((status) => {
+      if (status === "SUBSCRIBED") void channel.track({ role });
+      else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") onCount(null);
+    });
+
+  return () => {
+    void channel.untrack();
     void sb.removeChannel(channel);
   };
 }
