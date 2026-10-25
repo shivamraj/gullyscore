@@ -10,6 +10,7 @@ import "@fontsource/barlow-condensed/600.css";
 import "@fontsource/barlow-condensed/700.css";
 import "@fontsource/barlow-condensed/800.css";
 import "./globals.css";
+import { ThemeScript } from "@/components/ui/ThemeProvider";
 
 export const metadata: Metadata = {
   title: {
@@ -31,7 +32,11 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    // suppressHydrationWarning: ThemeScript may add "light" or "dark" to <html> before React loads.
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <ThemeScript />
+      </head>
       <body className="min-h-dvh">{children}</body>
     </html>
   );
