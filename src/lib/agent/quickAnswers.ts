@@ -5,10 +5,12 @@
 // Replies follow the question's language: English, Hinglish (Hindi in Roman letters) or Hindi.
 
 import type { BatterLine, InningsState } from "@/engine";
-import { topPerformers, type AgentContext } from "./tools";
+import { ballTimeline, isKind, topPerformers, type AgentContext, type BallKind } from "./tools";
 
 export type Lang = "en" | "hinglish" | "hi";
 export type Intent =
+  | "lastEvent"
+  | "count"
   | "howout"
   | "top"
   | "over"
@@ -29,10 +31,14 @@ export function detectLang(q: string): Lang {
 }
 
 // Checked in this order: the first match wins (e.g. "required run rate" is a rate, not "needed").
+// "boundry", "boundries" and other common misspellings are matched on purpose.
+const EVENT_WORD = String.raw`(bound\w*|fours?|4s|six(es)?|6s|wicket|wkt|chauk\w*|chhakk\w*|chakk\w*)`;
 const INTENTS: [Intent, RegExp][] = [
+  ["lastEvent", new RegExp(String.raw`\b(last|latest|recent|previous|pichh?l[aei]|aakhri|akhri)\b[^?]*\b${EVENT_WORD}\b|आखिरी|पिछल\S* (चौक|छक्क|विकेट)`)],
+  ["count", /\bhow many\b[^?]*\b(fours|4s|sixes|6s|bound\w*|extras|wides|no ?balls)\b|\b(kitne|kitni)\b[^?]*\b(chauk\w*|chhakk\w*|chakk\w*|fours?|six\w*|bound\w*|extras?|wides?)\b|कितने (चौके|छक्के|एक्स्ट्रा)/],
   ["howout", /\b(how|kaise)\b.*\bout\b|\bout kaise\b|dismiss|कैसे आउट|आउट कैसे/],
   ["top", /top scor|highest scor|most runs|best bowl|most wickets|sabse (zyada|jyada)|सबसे/],
-  ["over", /\b(last|pichh?l[aei]|previous|this|current|is)\s+over\b|पिछल\S* ओवर|इस ओवर/],
+  ["over", /\b(last|pichh?l[aei]|previous|this|current|is)\s+over\b|\b(last|pichh?l[aei])\s+\d+\s+(balls?|gend)\b|पिछल\S* ओवर|इस ओवर/],
   ["partnership", /partner|saajh|sajhe|साझ/],
   ["next", /\bnext\b|\bagl[ae]\b|aage kaun|अगल/],
   ["runrate", /run ?rate|\brrr\b|\bcrr\b|required rate|रन रेट/],
@@ -86,6 +92,25 @@ function scoreAnswer(ctx: AgentContext, lang: Lang): string {
   return `${team} are ${runs}/${wickets} after ${overs} overs.${chase ? ` They need ${s.runsNeeded} off ${n(s.ballsLeft!, "ball", "balls")}.` : ""}`;
 }
 
+/** Which kind of ball the question is about. */
+function kindAsked(text: string): BallKind {
+  if (/bound|बाउंड्री/.test(text)) return "boundary";
+  if (/six|\b6s?\b|chhakk|chakk|छक्क/.test(text)) return "six";
+  if (/four|\b4s?\b|chauk|चौक/.test(text)) return "four";
+  if (/wicket|wkt|विकेट/.test(text)) return "wicket";
+  if (/extra|wide|no ?ball|एक्स्ट्रा/.test(text)) return "extra";
+  return "boundary";
+}
+
+const KIND_WORDS: Record<BallKind, { en: string; enMany: string; hinglish: string; hi: string }> = {
+  boundary: { en: "boundary", enMany: "boundaries", hinglish: "boundary", hi: "बाउंड्री" },
+  four: { en: "four", enMany: "fours", hinglish: "chauka", hi: "चौका" },
+  six: { en: "six", enMany: "sixes", hinglish: "chhakka", hi: "छक्का" },
+  wicket: { en: "wicket", enMany: "wickets", hinglish: "wicket", hi: "विकेट" },
+  extra: { en: "extra", enMany: "extras", hinglish: "extra", hi: "एक्स्ट्रा" },
+  all: { en: "ball", enMany: "balls", hinglish: "gend", hi: "गेंद" },
+};
+
 /** The answer, or null if this isn't a question the quick path can answer. */
 export function quickAnswer(ctx: AgentContext, question: string): { text: string; intent: Intent; lang: Lang } | null {
   const intent = detectIntent(question);
@@ -106,6 +131,58 @@ export function quickAnswer(ctx: AgentContext, question: string): { text: string
   const live = s.status === "live";
 
   switch (intent) {
+    case "lastEvent": {
+      const kind = kindAsked(question.toLowerCase());
+      const timeline = ballTimeline(ctx);
+      const idx = timeline.map((b) => isKind(b, kind)).lastIndexOf(true);
+      const w = KIND_WORDS[kind];
+      if (idx < 0)
+        return say(`No ${w.enMany} yet in this match.`, `Is match mein abhi tak koi ${w.hinglish} nahi.`, `इस मैच में अभी तक कोई ${w.hi} नहीं।`);
+      const b = timeline[idx]!;
+      const ago = timeline.length - 1 - idx;
+      const inn = teamName(ctx, s.inningsList[b.innings - 1]!.battingTeam);
+      const agoEn = ago === 0 ? "the latest ball" : `${n(ago, "ball", "balls")} ago`;
+      const agoHg = ago === 0 ? "abhi abhi" : `${ago} gend pehle`;
+      const agoHi = ago === 0 ? "अभी अभी" : `${ago} गेंद पहले`;
+      if (b.kind === "wicket")
+        return say(
+          `Last wicket: ${b.out}, over ${b.over} of the ${inn} innings (${agoEn}).`,
+          `Aakhri wicket: ${b.out}, ${inn} ki innings ke over ${b.over} mein (${agoHg}).`,
+          `आखिरी विकेट: ${b.out}, ${inn} की पारी के ओवर ${b.over} में (${agoHi})।`,
+        );
+      const what = KIND_WORDS[b.kind === "six" ? "six" : "four"];
+      const label = kind === "boundary" ? `${w.en} (a ${what.en})` : w.en;
+      return say(
+        `Last ${label}: ${b.batter} off ${b.bowler}, over ${b.over} of the ${inn} innings (${agoEn}).`,
+        `Aakhri ${kind === "boundary" ? `boundary (${what.hinglish})` : w.hinglish}: ${b.batter} ne ${b.bowler} ki gend par, ${inn} ki innings ke over ${b.over} mein (${agoHg}).`,
+        `आखिरी ${kind === "boundary" ? `बाउंड्री (${what.hi})` : w.hi}: ${b.batter} ने ${b.bowler} की गेंद पर, ${inn} की पारी के ओवर ${b.over} में (${agoHi})।`,
+      );
+    }
+
+    case "count": {
+      const kind = kindAsked(question.toLowerCase());
+      const played = s.inningsList.filter((i) => i.batting.length);
+      if (kind === "extra") {
+        const parts = played.map((i) => `${teamName(ctx, i.battingTeam)}: ${i.extras.total} (wd ${i.extras.wides}, nb ${i.extras.noballs}, b ${i.extras.byes}, lb ${i.extras.legbyes})`);
+        return say(`Extras so far: ${parts.join("; ")}.`, `Ab tak ke extras: ${parts.join("; ")}.`, `अब तक के एक्स्ट्रा: ${parts.join("; ")}।`);
+      }
+      const timeline = ballTimeline(ctx);
+      const parts = played.map((i) => {
+        const inn = timeline.filter((b) => b.innings === i.number);
+        const fours = inn.filter((b) => b.kind === "four").length;
+        const sixes = inn.filter((b) => b.kind === "six").length;
+        const team = teamName(ctx, i.battingTeam);
+        if (kind === "four") return { en: `${team} ${n(fours, "four", "fours")}`, hg: `${team} ${fours} chauke`, hi: `${team} ${fours} चौके` };
+        if (kind === "six") return { en: `${team} ${n(sixes, "six", "sixes")}`, hg: `${team} ${sixes} chhakke`, hi: `${team} ${sixes} छक्के` };
+        return {
+          en: `${team} ${n(fours, "four", "fours")} and ${n(sixes, "six", "sixes")}`,
+          hg: `${team} ${fours} chauke aur ${sixes} chhakke`,
+          hi: `${team} ${fours} चौके और ${sixes} छक्के`,
+        };
+      });
+      return say(`So far: ${parts.map((p) => p.en).join("; ")}.`, `Ab tak: ${parts.map((p) => p.hg).join("; ")}.`, `अब तक: ${parts.map((p) => p.hi).join("; ")}।`);
+    }
+
     case "score":
       return { text: scoreAnswer(ctx, lang), intent, lang };
 
@@ -182,6 +259,20 @@ export function quickAnswer(ctx: AgentContext, question: string): { text: string
     }
 
     case "over": {
+      // "last 6 balls": the most recent deliveries, which may span two overs.
+      const lastN = /\b(?:last|pichh?l[aei])\s+(\d+)\s+(?:balls?|gend)\b/.exec(question.toLowerCase());
+      if (lastN) {
+        const count = Math.min(Math.max(Number(lastN[1]), 1), 36);
+        const recent = ballTimeline(ctx).slice(-count);
+        if (!recent.length) return say("No balls bowled yet.", "Abhi tak koi gend nahi daali gayi.", "अभी तक कोई गेंद नहीं डाली गई।");
+        const runs = recent.reduce((t, x) => t + x.runs, 0);
+        const list = recent.map((x) => x.result).join(", ");
+        return say(
+          `Last ${n(recent.length, "ball", "balls")}: ${list} (${n(runs, "run", "runs")}).`,
+          `Pichhli ${recent.length} gend: ${list} (${runs} run).`,
+          `पिछली ${recent.length} गेंद: ${list} (${runs} रन)।`,
+        );
+      }
       const wantsCurrent = /\b(this|current|is)\s+over\b|इस ओवर/.test(question.toLowerCase());
       if (wantsCurrent && s.thisOver.length) {
         const runs = s.thisOver.reduce((t, c) => t + c.runs, 0);
