@@ -1,9 +1,11 @@
 // Always-visible summary at the top of the scorer screen, so the scorer can confirm every tap:
-// score, overs, chase, both batters (★ = on strike), bowler figures, this over, and sync status.
+// score, overs, chase, both batters (★ = on strike), bowler figures, this over, sync status,
+// and how many people are watching.
 
 import type { BallChip, MatchState } from "@/engine";
 import type { NextBall } from "@/hooks/useScorer";
 import type { SyncStatus } from "@/lib/scorer/ballQueue";
+import { ViewerCount } from "@/components/ui/ViewerCount";
 
 const CHIP: Record<BallChip["kind"], string> = {
   dot: "bg-white/10",
@@ -33,6 +35,7 @@ function SyncBadge({ sync }: { sync: SyncStatus }) {
 }
 
 interface Props {
+  matchId: string;
   title: string;
   state: MatchState;
   next: NextBall;
@@ -40,7 +43,7 @@ interface Props {
   sync: SyncStatus;
 }
 
-export function TopStrip({ title, state, next, nameOf, sync }: Props) {
+export function TopStrip({ matchId, title, state, next, nameOf, sync }: Props) {
   const line = (id: string | null) => {
     if (!id) return null;
     const b = [state.striker, state.nonStriker].find((x) => x?.playerId === id);
@@ -52,11 +55,14 @@ export function TopStrip({ title, state, next, nameOf, sync }: Props) {
   const short = (n: string) => (n.length > 12 ? `${n.slice(0, 11)}…` : n);
 
   return (
-    <section className="flex flex-col gap-2.5 bg-[#0f1a14] px-4 pt-4 pb-3.5 text-white">
+    <section className="flex flex-col gap-2.5 bg-[#0f1a14] px-4 pt-4 pb-3.5 text-white md:landscape:h-full md:landscape:gap-4 md:landscape:p-6">
       <div className="flex items-center justify-between text-[13px] text-white/70">
         <SyncBadge sync={sync} />
-        <span className="truncate px-2">{title}</span>
-        {state.target !== undefined ? <span>Target {state.target}</span> : <span>Innings {state.innings}</span>}
+        <span className="min-w-0 flex-1 truncate px-2 text-center">{title}</span>
+        <span className="flex shrink-0 items-center gap-3">
+          <ViewerCount matchId={matchId} role="scorer" />
+          {state.target !== undefined ? <span>Target {state.target}</span> : <span>Innings {state.innings}</span>}
+        </span>
       </div>
 
       <div className="flex items-baseline justify-between">
