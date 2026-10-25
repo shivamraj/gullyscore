@@ -98,8 +98,8 @@ export interface CreateMatchInput {
   title: string;
   venue?: string;
   overs: number;
-  playersPerSide: number;
   lastManStands: boolean;
+  /** Each side lists 2–15 players; the sides can be different sizes. */
   sides: [MatchSideInput, MatchSideInput];
   toss: { winner: 0 | 1; decision: "bat" | "bowl" };
   openers: InningsOpeners;

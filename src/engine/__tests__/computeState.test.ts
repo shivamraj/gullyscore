@@ -342,6 +342,22 @@ describe("innings end and the chase", () => {
     expect(s.inningsList[0]).toMatchObject({ wickets: 2, complete: true });
   });
 
+  it("uneven sides: each side is all out according to its own size", () => {
+    const config = makeConfig({ playersPerSide: 4, teamA: team("r", "Riverside", 3), teamB: team("h", "Hilltop", 4) });
+    const m = play(config);
+    m.bowl({ runsBat: 4 });
+    m.bowl({ wicket: { type: "bowled" } });
+    let s = m.bowl({ wicket: { type: "bowled" } });
+    expect(s.status).toBe("innings_break"); // 3 players → all out at 2 wickets
+    expect(s.target).toBe(5);
+    m.bowl({ wicket: { type: "bowled" } });
+    s = m.bowl({ wicket: { type: "bowled" } });
+    expect(s.status).toBe("live"); // 4 players → still batting after 2 wickets
+    expect(s.score.wickets).toBe(2);
+    s = m.bowl({ runsBat: 6 });
+    expect(s.result).toBe("Hilltop won by 1 wicket (9 balls left)");
+  });
+
   it("last man stands: the last batter bats alone until every batter is out", () => {
     const config = makeConfig({ playersPerSide: 3, lastManStands: true });
     const m = play(config);
