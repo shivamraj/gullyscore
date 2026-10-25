@@ -34,6 +34,7 @@ export class BallQueue {
   private backoff = 1_000;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private stopped = false;
+  private idleWaiters: { resolve: () => void; reject: (e: Error) => void }[] = [];
   private readonly key: string;
   private readonly onOnline = () => {
     this.backoff = 1_000;
@@ -75,6 +76,24 @@ export class BallQueue {
   /** Whether everything has reached the server. */
   isEmpty(): boolean {
     return this.items.length === 0;
+  }
+
+  /**
+   * Resolves once every queued ball has reached the server. Rejects if the network is down
+   * (so an undo of an already-sent ball can't race the ball itself).
+   */
+  whenIdle(): Promise<void> {
+    if (this.items.length === 0 && !this.sending) return Promise.resolve();
+    return new Promise((resolve, reject) => {
+      this.idleWaiters.push({ resolve, reject });
+      void this.flush();
+    });
+  }
+
+  private settleWaiters(error?: Error): void {
+    const waiters = this.idleWaiters;
+    this.idleWaiters = [];
+    for (const w of waiters) (error ? w.reject(error) : w.resolve());
   }
 
   start(): void {
@@ -136,6 +155,7 @@ export class BallQueue {
           // No network: keep the ball, try again later.
           this.report(true);
           this.retryLater();
+          this.settleWaiters(new Error("You're offline. Waiting balls will be saved when you're back online."));
           return;
         }
 
@@ -150,6 +170,7 @@ export class BallQueue {
         if (res.status >= 500) {
           this.report(true);
           this.retryLater();
+          this.settleWaiters(new Error("The server is not responding. Try again in a moment."));
           return;
         }
         // 4xx: the server won't accept this ball. Later balls depend on it, so drop them all.
@@ -157,11 +178,13 @@ export class BallQueue {
         this.write();
         this.opts.onStatus({ kind: "error", message: data.error ?? `Ball not saved (${res.status}).` });
         this.opts.onRejected(data.error ?? "The server did not accept the last ball.");
+        this.settleWaiters(new Error(data.error ?? "Ball not saved."));
         return;
       }
       this.report();
     } finally {
       this.sending = false;
+      if (this.items.length === 0) this.settleWaiters();
     }
   }
 
