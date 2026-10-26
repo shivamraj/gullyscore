@@ -61,7 +61,14 @@ export function geminiModel(): ChatModel | null {
         contents,
         // No tools on the final round (an empty declaration list can be rejected).
         ...(tools.length ? { tools: [{ functionDeclarations: tools }] } : {}),
-        generationConfig: { temperature: 0.2, maxOutputTokens: 600 },
+        // Gemini 3 models think before answering, and those thought tokens count against
+        // maxOutputTokens. With a small limit the thinking used it all up and the reply came back
+        // empty. "low" thinking keeps answers quick; the larger limit leaves room for the answer.
+        // Gemini 3 is tuned for its default temperature, so none is set.
+        generationConfig: {
+          maxOutputTokens: 4096,
+          thinkingConfig: { thinkingLevel: process.env.GEMINI_THINKING_LEVEL || "low" },
+        },
       });
       let res = await call(body);
       // One retry for a busy (429) or failing (5xx) service: these are usually momentary.
@@ -69,10 +76,20 @@ export function geminiModel(): ChatModel | null {
         await new Promise((r) => setTimeout(r, 800));
         res = await call(body);
       }
-      if (res.status === 429) throw new LlmUnavailableError("The AI is busy right now (rate limit).");
-      if (!res.ok) throw new LlmUnavailableError(`The AI service returned an error (${res.status}).`);
+      if (!res.ok) {
+        // Log Google's own message (bad key, unknown model, quota…) so it shows in the server logs
+        // instead of hiding behind the viewer's "busy" reply. The key is never logged.
+        const detail = (await res.text().catch(() => "")).slice(0, 500);
+        console.error(JSON.stringify({ gemini: "request failed", status: res.status, model, detail }));
+        if (res.status === 429) throw new LlmUnavailableError("The AI is busy right now (rate limit).");
+        throw new LlmUnavailableError(`The AI service returned an error (${res.status}).`);
+      }
 
-      const data = (await res.json()) as { candidates?: { content?: Content }[] };
+      const data = (await res.json()) as { candidates?: { content?: Content; finishReason?: string }[]; promptFeedback?: unknown };
+      const finish = data.candidates?.[0]?.finishReason;
+      if (finish && finish !== "STOP") {
+        console.warn(JSON.stringify({ gemini: "unusual finish", finishReason: finish, model, promptFeedback: data.promptFeedback }));
+      }
       const content: Content = data.candidates?.[0]?.content ?? { role: "model", parts: [] };
       content.role = "model";
       content.parts ??= [];
