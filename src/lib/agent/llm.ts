@@ -1,7 +1,8 @@
 // LLM adapter. Gemini today; another provider (Groq, a paid model) can replace this file
 // without touching the agent, as long as it implements `ChatModel`.
 //
-// Env: GEMINI_API_KEY (required for AI answers), GEMINI_MODEL (optional, default below).
+// Env: GEMINI_API_KEY (required for Ask), GEMINI_MODEL (optional, default below),
+//      GEMINI_API_BASE (optional, defaults to Google's API).
 
 export interface ToolCall {
   id?: string;
@@ -36,39 +37,50 @@ export function geminiModel(): ChatModel | null {
   const key = process.env.GEMINI_API_KEY;
   if (!key) return null;
   const model = process.env.GEMINI_MODEL || DEFAULT_MODEL;
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+  // GEMINI_API_BASE is optional: a proxy, or a stand-in Gemini in end-to-end tests.
+  const base = (process.env.GEMINI_API_BASE || "https://generativelanguage.googleapis.com").replace(/\/$/, "");
+  const url = `${base}/v1beta/models/${model}:generateContent`;
+
+  const call = async (body: string): Promise<Response> => {
+    try {
+      return await fetch(url, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-goog-api-key": key },
+        body,
+        signal: AbortSignal.timeout(20_000),
+      });
+    } catch {
+      return new Response(null, { status: 599 }); // network error or timeout: treated like a 5xx
+    }
+  };
 
   return {
     async chat({ system, contents, tools }) {
-      let res: Response;
-      try {
-        res = await fetch(url, {
-          method: "POST",
-          headers: { "content-type": "application/json", "x-goog-api-key": key },
-          body: JSON.stringify({
-            systemInstruction: { parts: [{ text: system }] },
-            contents,
-            tools: [{ functionDeclarations: tools }],
-            generationConfig: { temperature: 0.2, maxOutputTokens: 400 },
-          }),
-          signal: AbortSignal.timeout(15_000),
-        });
-      } catch {
-        throw new LlmUnavailableError("The AI service did not respond.");
+      const body = JSON.stringify({
+        systemInstruction: { parts: [{ text: system }] },
+        contents,
+        // No tools on the final round (an empty declaration list can be rejected).
+        ...(tools.length ? { tools: [{ functionDeclarations: tools }] } : {}),
+        generationConfig: { temperature: 0.2, maxOutputTokens: 600 },
+      });
+      let res = await call(body);
+      // One retry for a busy (429) or failing (5xx) service: these are usually momentary.
+      if (res.status === 429 || res.status >= 500) {
+        await new Promise((r) => setTimeout(r, 800));
+        res = await call(body);
       }
-      if (res.status === 429) throw new LlmUnavailableError("The AI is busy right now (free-tier limit).");
+      if (res.status === 429) throw new LlmUnavailableError("The AI is busy right now (rate limit).");
       if (!res.ok) throw new LlmUnavailableError(`The AI service returned an error (${res.status}).`);
 
       const data = (await res.json()) as { candidates?: { content?: Content }[] };
       const content: Content = data.candidates?.[0]?.content ?? { role: "model", parts: [] };
       content.role = "model";
+      content.parts ??= [];
       const text = content.parts
         .map((p) => (typeof p.text === "string" && !p.thought ? p.text : ""))
         .join("")
         .trim();
-      const toolCalls = content.parts
-        .filter((p) => p.functionCall)
-        .map((p) => p.functionCall as ToolCall);
+      const toolCalls = content.parts.filter((p) => p.functionCall).map((p) => p.functionCall as ToolCall);
       return { content, text, toolCalls };
     },
   };

@@ -47,34 +47,40 @@ export async function POST(request: Request) {
     const viewer = request.headers.get("x-viewer-id") ?? request.headers.get("x-forwarded-for") ?? "anonymous";
     if (rateLimited(`${viewer}:${matchId}`)) throw new ApiError(429, "That's a lot of questions! Wait a minute and ask again.");
 
-    const [{ match, config }, { data, error }] = await Promise.all([
+    const started = Date.now();
+    const [{ match, config }, { data, error }, balls] = await Promise.all([
       getMatchConfig(matchId),
       getServerSupabase().from("match_state_cache").select("state").eq("match_id", matchId).maybeSingle(),
+      listBalls(matchId),
     ]);
     if (error) throw error;
     if (!data) throw new ApiError(404, "Match not found.");
     const state = data.state as MatchState;
 
     const history = parseHistory(body.history);
-    const key = `${matchId}:${state.lastSeq}:${question.toLowerCase().replace(/\s+/g, " ")}`;
+    // Same match, same ball, same question (ignoring case, punctuation and spacing) → same answer.
+    const key = `${matchId}:${state.lastSeq}:${question.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim()}`;
     const hit = !history.length ? cache.get(key) : undefined;
     if (hit && Date.now() - hit.at < CACHE_MS) {
       return Response.json({ answer: hit.answer, asOf: state.score.overs, source: hit.source });
     }
 
-    const balls = await listBalls(matchId);
     const tossWinner = [config.teamA, config.teamB].find((t) => t.id === match.toss_winner)?.name ?? "";
     const ctx: AgentContext = {
       state,
       title: match.title,
+      venue: match.venue,
       overs: match.overs,
       tossLine: `${tossWinner} won the toss and chose to ${match.toss_decision}`,
       teams: [config.teamA, config.teamB].map((t) => ({ id: t.id, name: t.name, shortCode: t.shortCode, players: t.players })),
       balls,
     };
     const answer = await answerQuestion(ctx, question, history);
-    if (!history.length) cache.set(key, { answer: answer.text, source: answer.source, at: Date.now() });
+    // Only real answers are cached; "busy" or "not switched on" must not stick.
+    if (!history.length && answer.source === "ai") cache.set(key, { answer: answer.text, source: answer.source, at: Date.now() });
     if (cache.size > 2_000) cache.clear();
+    // One line per question in the Vercel logs: what was used and how long it took (no question text).
+    console.info(JSON.stringify({ ask: matchId, ball: state.lastSeq, source: answer.source, tools: answer.tools, ms: Date.now() - started }));
 
     return Response.json({ answer: answer.text, asOf: state.score.overs, source: answer.source });
   } catch (e) {
