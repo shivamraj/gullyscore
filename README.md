@@ -45,6 +45,7 @@ Keys go in `.env.local` (never committed). See `.env.example` for the list:
 | `SUPABASE_SERVICE_ROLE_KEY` | Phase 2 | Supabase › Project Settings › API (keep secret) |
 | `GEMINI_API_KEY` | Phase 5 | Google AI Studio › Get API key. **Needed for Ask**; without it Ask replies "isn't switched on". |
 | `GEMINI_MODEL` | Optional | A different Gemini model than the default in `src/lib/agent/llm.ts`. |
+| `GEMINI_THINKING_LEVEL` | Optional | How much the model thinks before answering: `low` (default, fastest), `medium` or `high`. |
 
 ## Put it live on Vercel (free)
 
