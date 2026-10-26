@@ -3,7 +3,8 @@
 // Every question goes to the AI with a live snapshot of the match (prompt.ts). The AI answers
 // straight away when the snapshot is enough, or calls read-only tools (tools.ts) to look things
 // up (ball-by-ball, a player, over-by-over, the scorecard, arithmetic) for up to MAX_TOOL_ROUNDS
-// rounds before it must answer. No keyword lists: the AI understands the question.
+// rounds before it must answer. Two tools read past matches from the database. No keyword
+// lists: the AI understands the question.
 
 import { geminiModel, LlmUnavailableError, type ChatModel, type Content } from "./llm";
 import { systemPrompt } from "./prompt";
@@ -59,12 +60,12 @@ export async function answerQuestion(
         return { text: reply.text || NO_ANSWER, source: "ai", tools: used };
       }
       contents.push(reply.content);
+      // Several calls in one round run at the same time (some read the database).
+      used.push(...reply.toolCalls.map((c) => c.name));
+      const results = await Promise.all(reply.toolCalls.map((call) => runTool(ctx, call.name, call.args ?? {})));
       contents.push({
         role: "user",
-        parts: reply.toolCalls.map((call) => {
-          used.push(call.name);
-          return { functionResponse: { name: call.name, response: runTool(ctx, call.name, call.args ?? {}), ...(call.id ? { id: call.id } : {}) } };
-        }),
+        parts: reply.toolCalls.map((call, i) => ({ functionResponse: { name: call.name, response: results[i], ...(call.id ? { id: call.id } : {}) } })),
       });
     }
     return { text: NO_ANSWER, source: "ai", tools: used };

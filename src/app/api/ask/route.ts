@@ -6,6 +6,7 @@
 import { answerQuestion, MAX_QUESTION_LENGTH, type HistoryTurn } from "@/lib/agent/agent";
 import type { AgentContext } from "@/lib/agent/tools";
 import { listBalls } from "@/lib/db/balls";
+import { playerPastMatches, teamMeetings } from "@/lib/db/history";
 import { getMatchConfig } from "@/lib/db/matches";
 import { ApiError, errorResponse, isUuid, readJson } from "@/lib/db/types";
 import { getServerSupabase } from "@/lib/supabase/server";
@@ -74,6 +75,10 @@ export async function POST(request: Request) {
       tossLine: `${tossWinner} won the toss and chose to ${match.toss_decision}`,
       teams: [config.teamA, config.teamB].map((t) => ({ id: t.id, name: t.name, shortCode: t.shortCode, players: t.players })),
       balls,
+      history: {
+        playerMatches: (playerId, limit) => playerPastMatches(playerId, matchId, limit),
+        teamMeetings: (limit) => teamMeetings(config.teamA.id, config.teamB.id, matchId, limit),
+      },
     };
     const answer = await answerQuestion(ctx, question, history);
     // Only real answers are cached; "busy" or "not switched on" must not stick.
