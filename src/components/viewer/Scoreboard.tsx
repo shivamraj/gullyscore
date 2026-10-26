@@ -41,6 +41,8 @@ interface Props {
   tossLine: string;
   teams: ViewerTeam[];
   initial: StateRow;
+  /** The logged-in umpire created this match: show a button back to the scorer. */
+  canScore?: boolean;
 }
 
 const STATUS: Record<MatchStatus, { text: string; live: boolean }> = {
@@ -50,7 +52,7 @@ const STATUS: Record<MatchStatus, { text: string; live: boolean }> = {
   finished: { text: "RESULT", live: false },
 };
 
-export function Scoreboard({ matchId, title, venue, overs, tossLine, teams, initial }: Props) {
+export function Scoreboard({ matchId, title, venue, overs, tossLine, teams, initial, canScore = false }: Props) {
   const { state } = useLiveMatch(matchId, initial);
   const [tab, setTab] = useState<"live" | "scorecard">("live");
   const byId = useMemo(() => Object.fromEntries(teams.map((t) => [t.id, t])), [teams]);
@@ -90,6 +92,21 @@ export function Scoreboard({ matchId, title, venue, overs, tossLine, teams, init
           <ThemeToggle />
         </div>
       </header>
+
+      {canScore && (
+        <Link
+          href={`/score/${matchId}`}
+          className="flex min-h-12 items-center justify-between gap-3 rounded-2xl bg-pitch px-4 py-2.5 font-bold text-on-pitch"
+        >
+          <span className="flex flex-col">
+            <span className="text-xs font-semibold opacity-80">You&apos;re the umpire</span>
+            <span>{state.status === "finished" ? "Open the scorer" : state.status === "upcoming" ? "Start scoring" : "Score this match"}</span>
+          </span>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M9 6l6 6-6 6" />
+          </svg>
+        </Link>
+      )}
 
       <div className="flex flex-col gap-2.5 md:grid md:grid-cols-2 md:items-start md:gap-4 lg:grid-cols-[minmax(0,440px)_minmax(0,1fr)]">
         <div className={`flex flex-col gap-2.5 ${upcoming ? "md:col-span-2 md:mx-auto md:w-full md:max-w-xl" : ""}`}>
