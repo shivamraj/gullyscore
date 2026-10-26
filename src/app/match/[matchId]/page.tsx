@@ -1,11 +1,14 @@
 // /match/[matchId] — the public page viewers open from the shared link.
 // The server sends the latest saved state so the score shows instantly; then it updates live.
+// If the logged-in umpire created this match, the page also offers a way back to scoring.
 
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { computeState } from "@/engine";
+import { isMatchOwner } from "@/lib/db/balls";
 import { getMatchConfig } from "@/lib/db/matches";
 import { ApiError } from "@/lib/db/types";
+import { currentUmpire } from "@/lib/supabase/auth";
 import { getServerSupabase } from "@/lib/supabase/server";
 import { Scoreboard, type ViewerTeam } from "@/components/viewer/Scoreboard";
 
@@ -54,6 +57,9 @@ export default async function MatchPage({ params }: { params: Promise<{ matchId:
   const { matchId } = await params;
   const data = await load(matchId);
   if (!data) notFound();
+  // Viewers aren't logged in; a login check failing must never break the public page.
+  const umpire = await currentUmpire().catch(() => null);
+  const canScore = umpire ? await isMatchOwner(matchId, umpire.id).catch(() => false) : false;
   return (
     <Scoreboard
       matchId={matchId}
@@ -63,6 +69,7 @@ export default async function MatchPage({ params }: { params: Promise<{ matchId:
       tossLine={data.tossLine}
       teams={data.teams}
       initial={data.initial}
+      canScore={canScore}
     />
   );
 }
