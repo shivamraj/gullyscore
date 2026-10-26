@@ -135,23 +135,36 @@ export function buildConfig(
 export async function getMatchConfig(matchId: string): Promise<{ match: MatchRow; config: MatchConfig }> {
   if (!isUuid(matchId)) throw new ApiError(404, "Match not found.");
   const db = getServerSupabase();
-  const { data: match, error } = await db.from("matches").select(MATCH_COLUMNS).eq("id", matchId).maybeSingle();
-  if (error) throw error;
-  if (!match) throw new ApiError(404, "Match not found.");
-  const m = match as MatchRow;
-
-  const [teams, roster] = await Promise.all([
-    db.from("teams").select("id, name, short_code").in("id", [m.team_a, m.team_b]),
-    db.from("match_players").select("match_id, player_id, team_id, batting_order").eq("match_id", matchId),
+  // One round trip: the match with both teams, and today's lineups with player names, in parallel.
+  // (Every round trip to the database counts: this runs on every page load and every saved ball.)
+  const [matchRes, rosterRes] = await Promise.all([
+    db
+      .from("matches")
+      .select(
+        `${MATCH_COLUMNS},
+         team_a_info:teams!matches_team_a_fkey (id, name, short_code),
+         team_b_info:teams!matches_team_b_fkey (id, name, short_code)`,
+      )
+      .eq("id", matchId)
+      .maybeSingle(),
+    db
+      .from("match_players")
+      .select("match_id, player_id, team_id, batting_order, player:players!match_players_player_id_fkey (id, name)")
+      .eq("match_id", matchId),
   ]);
-  if (teams.error) throw teams.error;
-  if (roster.error) throw roster.error;
+  if (matchRes.error) throw matchRes.error;
+  if (rosterRes.error) throw rosterRes.error;
+  if (!matchRes.data) throw new ApiError(404, "Match not found.");
 
-  const ids = (roster.data as MatchPlayerRow[]).map((r) => r.player_id);
-  const players = await db.from("players").select("id, name").in("id", ids);
-  if (players.error) throw players.error;
+  const { team_a_info, team_b_info, ...match } = matchRes.data as unknown as MatchRow & { team_a_info: unknown; team_b_info: unknown };
+  type TeamInfo = Pick<TeamRow, "id" | "name" | "short_code">;
+  const teams = [one(team_a_info as TeamInfo | TeamInfo[]), one(team_b_info as TeamInfo | TeamInfo[])].filter((t): t is TeamInfo => t !== null);
+  const rows = rosterRes.data as unknown as (MatchPlayerRow & { player: unknown })[];
+  const roster: MatchPlayerRow[] = rows.map(({ player: _player, ...r }) => r);
+  type PlayerName = Pick<PlayerRow, "id" | "name">;
+  const players = rows.map((r) => one(r.player as PlayerName | PlayerName[])).filter((p): p is PlayerName => p !== null);
 
-  return { match: m, config: buildConfig(m, teams.data, roster.data as MatchPlayerRow[], players.data) };
+  return { match, config: buildConfig(match, teams, roster, players) };
 }
 
 // ---------- creating a match ----------

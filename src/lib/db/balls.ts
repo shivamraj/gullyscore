@@ -68,17 +68,24 @@ function ballToRow(matchId: string, b: BallEvent, clientId: string) {
 
 /** True if this user created the match. Only they can score it. */
 export async function isMatchOwner(matchId: string, userId: string): Promise<boolean> {
-  if (!isUuid(matchId) || !isUuid(userId)) return false;
-  const { data, error } = await getServerSupabase().from("matches").select("owner_key").eq("id", matchId).maybeSingle();
-  if (error) throw error;
-  return data?.owner_key === userId;
+  if (!isUuid(userId)) return false;
+  return (await ownerOf(matchId)) === userId;
 }
 
 /** The logged-in umpire, if they created this match: 401 when not logged in, 403 for anyone else. */
 export async function requireScorer(matchId: string): Promise<Umpire> {
-  const umpire = await requireUmpire();
-  if (!(await isMatchOwner(matchId, umpire.id))) throw new ApiError(403, "Only the umpire who created this match can score it.");
+  // Who's logged in, and who owns the match, are asked at the same time (one round trip, not two).
+  const [umpire, owner] = await Promise.all([requireUmpire(), ownerOf(matchId)]);
+  if (owner !== umpire.id) throw new ApiError(403, "Only the umpire who created this match can score it.");
   return umpire;
+}
+
+/** The user id of the umpire who created the match (null if there is no such match). */
+export async function ownerOf(matchId: string): Promise<string | null> {
+  if (!isUuid(matchId)) return null;
+  const { data, error } = await getServerSupabase().from("matches").select("owner_key").eq("id", matchId).maybeSingle();
+  if (error) throw error;
+  return (data?.owner_key as string | undefined) ?? null;
 }
 
 // ---------- reading ----------
@@ -165,10 +172,11 @@ export interface SaveBallResult {
 export async function saveBall(matchId: string, ball: BallEvent, clientId: string): Promise<SaveBallResult> {
   if (!isUuid(clientId)) throw new ApiError(400, "clientId must be an id.");
   const db = getServerSupabase();
-  const { config, balls } = await loadScoringData(matchId);
-
-  // Retry of a ball we already have?
-  const { data: existing, error: exErr } = await db.from("balls").select("seq").eq("client_id", clientId).maybeSingle();
+  // The match, its balls, and "is this a retry of a ball we already have?" in one round trip.
+  const [{ config, balls }, { data: existing, error: exErr }] = await Promise.all([
+    loadScoringData(matchId),
+    db.from("balls").select("seq").eq("client_id", clientId).maybeSingle(),
+  ]);
   if (exErr) throw exErr;
   if (existing) return { state: computeState(config, balls), duplicate: true };
 
