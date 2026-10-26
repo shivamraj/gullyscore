@@ -56,8 +56,11 @@ async function viewerCanScore(matchId: string): Promise<boolean> {
 
 export async function generateMetadata({ params }: { params: Promise<{ matchId: string }> }): Promise<Metadata> {
   const { matchId } = await params;
-  const data = await load(matchId).catch(() => null);
-  if (!data) return { title: "Match not found" };
+  const data = await load(matchId);
+  // Because the page streams in after an instant loading screen, a missing match is answered
+  // with HTTP 200 plus the "could not be found" page and a noindex tag (standard Next.js
+  // streaming), so search engines and link previews still treat it as missing.
+  if (!data) notFound();
   const [a, b] = data.teams;
   return {
     title: `${a!.name} vs ${b!.name}`,
