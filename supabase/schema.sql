@@ -143,3 +143,25 @@ grant select (id, title, venue, team_a, team_b, overs, players_per_side, last_ma
 alter table balls replica identity full;
 
 alter publication supabase_realtime add table balls, match_state_cache, matches;
+
+-- ---------------------------------------------------------------
+-- Ask agent: shared answer cache, rate limit and question log (PR 23).
+-- Private to the server: row-level security on, no public policies.
+-- ---------------------------------------------------------------
+
+create table ask_log (
+  id            bigint generated always as identity primary key,
+  match_id      uuid not null references matches (id) on delete cascade,
+  viewer        text not null,            -- one-way hash of the viewer's random device id
+  question      text not null,
+  question_key  text not null,            -- lower-cased, no punctuation: shares cached answers
+  last_seq      int  not null,            -- the ball the answer is about
+  answer        text not null,
+  source        text not null check (source in ('ai', 'cache', 'busy', 'unavailable')),
+  tools         text[] not null default '{}',
+  ms            int  not null default 0,
+  created_at    timestamptz not null default now()
+);
+create index ask_log_cache_idx  on ask_log (match_id, last_seq, question_key) where source = 'ai';
+create index ask_log_viewer_idx on ask_log (viewer, created_at desc);
+alter table ask_log enable row level security;

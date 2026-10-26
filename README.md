@@ -105,6 +105,25 @@ Until this is done, the login page says "Google sign-in isn't switched on yet".
 
 **Test it locally:** `npm run dev`, open http://localhost:3000, tap **Umpire login › Continue with Google**, and you land on **My matches**. Phones on your Wi-Fi (`http://192.168.x.x:3000`) can watch, but Google sign-in only returns to addresses listed above, so log in on the computer or the live site.
 
+## Ask agent: setup, checking answers, and logs
+
+**One-time database step** (projects created before PR 23): Supabase › **SQL Editor** › New query, paste all of `supabase/migrations/002_ask_log.sql`, click **Run**. It adds the private `ask_log` table that holds:
+- the **shared answer cache**: same match, same ball, same question → no AI call;
+- the **rate limit**: 10 questions a minute per viewer, counted across all servers;
+- the **question log**.
+
+Until you run it, Ask still works, using each server's memory instead.
+
+**Check the AI's answers before a release** (needs `GEMINI_API_KEY` in `.env.local`):
+
+```powershell
+npm run eval:ask
+```
+
+It asks about 40 questions on a sample match: English, Hindi and Hinglish; typos; players; history; maths; off-topic; and tricks. Each answer is checked against facts calculated by the scoring engine. You get a PASS/FAIL list with the AI's answer, the tools it used and the time, and it fails below 85%. It takes about 3–5 minutes, because it pauses between questions to stay inside the free-tier rate limit. Options: `$env:EVAL_ONLY="boundary"; npm run eval:ask` runs only matching questions.
+
+**See what people ask:** Supabase › Table Editor › `ask_log`: question, answer, `source` (`ai`, `cache`, `busy`, `unavailable`), tools used and time (`ms`). Viewers appear only as a one-way hash. Vercel › Logs also shows one line per question.
+
 ## Install it on a phone (app icon on the home screen)
 
 GullyScore is a PWA: it installs from the browser, no app store needed. Installing needs the live `https://` site (step 4 above). On `http://` addresses like your local Wi-Fi IP, it works but can't be installed.
