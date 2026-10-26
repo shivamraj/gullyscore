@@ -10,6 +10,7 @@ import "@fontsource/barlow-condensed/600.css";
 import "@fontsource/barlow-condensed/700.css";
 import "@fontsource/barlow-condensed/800.css";
 import "./globals.css";
+import { NavProgress } from "@/components/ui/NavProgress";
 import { ThemeScript } from "@/components/ui/ThemeProvider";
 
 export const metadata: Metadata = {
@@ -47,7 +48,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <ThemeScript />
         {process.env.NODE_ENV === "production" && <script dangerouslySetInnerHTML={{ __html: REGISTER_SW }} />}
       </head>
-      <body className="min-h-dvh">{children}</body>
+      <body className="min-h-dvh">
+        <NavProgress />
+        {children}
+      </body>
     </html>
   );
 }

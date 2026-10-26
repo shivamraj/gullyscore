@@ -136,3 +136,17 @@ body {
     animation: none !important;
   }
 }
+
+/* ---------- Page-loading bar (src/components/ui/NavProgress.tsx) ---------- */
+/* Races to ~30% at once, then creeps towards 90% while the page loads; jumps to 100% when done. */
+@keyframes nav-progress {
+  0% { width: 0; }
+  10% { width: 30%; }
+  50% { width: 65%; }
+  100% { width: 90%; }
+}
+.nav-progress-run { width: 90%; animation: nav-progress 6s cubic-bezier(0.1, 0.6, 0.3, 1) both; }
+.nav-progress-done { width: 100%; opacity: 0; transition: width 0.15s ease-out, opacity 0.3s 0.1s ease-out; }
+@media (prefers-reduced-motion: reduce) {
+  .nav-progress-run { animation: none; width: 60%; }
+}

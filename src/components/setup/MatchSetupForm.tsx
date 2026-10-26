@@ -11,6 +11,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { api, newId } from "@/lib/apiClient";
+import { startNavProgress } from "@/components/ui/NavProgress";
 import type { CreateMatchResult, PlayerInput, Team } from "@/lib/db/types";
 import { Button, buttonClasses } from "@/components/ui/Button";
 import { BattingOrderPicker } from "./BattingOrderPicker";
@@ -401,6 +402,7 @@ export function MatchSetupForm() {
       };
       const created = await api<CreateMatchResult>("/api/matches", { method: "POST", body });
       // Stay "submitting" while the scorer screen loads, so the button can't be tapped twice.
+      startNavProgress();
       router.replace(`/score/${created.matchId}?new=1`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not create the match.");
