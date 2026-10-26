@@ -4,6 +4,7 @@
 //
 // Fewer, flexible tools beat many narrow ones: get_balls alone answers "last boundary",
 // "how many sixes in the powerplay", "what did Rahul score off Arjun" and "last 6 balls".
+// Two tools read past matches from the database (through ctx.history).
 
 import type { InningsState } from "@/engine";
 import { batterLine, bowlerLine, findPlayers, nameOf, snapshot, teamOf, timeline, type AgentContext, type TimelineBall } from "./matchData";
@@ -17,7 +18,7 @@ export interface ToolDef {
   description: string;
   /** JSON Schema (OpenAPI subset) of the arguments, as Gemini function declarations expect. */
   parameters: Json;
-  run: (ctx: AgentContext, args: Json) => Json;
+  run: (ctx: AgentContext, args: Json) => Json | Promise<Json>;
 }
 
 const RESULTS = ["four", "six", "boundary", "wicket", "dot", "runs", "extra", "wide", "noball", "bye", "legbye"] as const;
@@ -264,6 +265,53 @@ export const TOOLS: ToolDef[] = [
     }),
   },
   {
+    name: "get_player_history",
+    description:
+      "A player's EARLIER matches recorded on GullyScore (not this one): runs, balls, wickets and results per match, plus career totals. Use for form, past performances, best scores or 'how has X done before'. Only players picked from a saved team are tracked across matches.",
+    parameters: {
+      type: "object",
+      properties: { name: { type: "string", description: "A player in this match." }, last: { type: "integer", description: "How many recent matches (default 5, max 20)." } },
+      required: ["name"],
+    },
+    run: async (ctx, a) => {
+      if (!ctx.history) return { error: "Past matches aren't available right now." };
+      const p = onePlayer(ctx, a.name);
+      if ("error" in p) return p;
+      const last = typeof a.last === "number" ? Math.min(Math.max(1, a.last), 20) : 5;
+      const past = await ctx.history.playerMatches(p.id, last);
+      if (!past.length) return { player: p.name, matches: [], note: "No earlier matches recorded for this player on GullyScore." };
+      const bat = past.flatMap((m) => m.batting);
+      const bowl = past.flatMap((m) => m.bowling);
+      return {
+        player: p.name,
+        totals: {
+          matches: past.length,
+          innings: bat.length,
+          runs: bat.reduce((n, b) => n + b.runs, 0),
+          balls: bat.reduce((n, b) => n + b.balls, 0),
+          not_outs: bat.filter((b) => !b.out).length,
+          highest: bat.length ? Math.max(...bat.map((b) => b.runs)) : null,
+          wickets: bowl.reduce((n, b) => n + b.wickets, 0),
+          runs_conceded: bowl.reduce((n, b) => n + b.runs, 0),
+          best_bowling: bowl.length ? bowl.reduce((best, b) => (b.wickets > best.wickets || (b.wickets === best.wickets && b.runs < best.runs) ? b : best)) : null,
+        },
+        matches: past,
+      };
+    },
+  },
+  {
+    name: "get_head_to_head",
+    description: "Earlier matches between the two teams playing now, as recorded on GullyScore: dates, scores, results and wins for each side.",
+    parameters: { type: "object", properties: { last: { type: "integer", description: "How many recent meetings (default 5, max 20)." } } },
+    run: async (ctx, a) => {
+      if (!ctx.history) return { error: "Past matches aren't available right now." };
+      const last = typeof a.last === "number" ? Math.min(Math.max(1, a.last), 20) : 5;
+      const meetings = await ctx.history.teamMeetings(last);
+      const wins = Object.fromEntries(ctx.teams.map((t) => [t.name, meetings.filter((m) => m.winner === t.name).length]));
+      return meetings.length ? { meetings: meetings.length, wins, results: meetings } : { meetings: 0, note: "These teams haven't played each other on GullyScore before." };
+    },
+  },
+  {
     name: "calculate",
     description: "Exact arithmetic: + - * / and brackets. Use it for any sum the data doesn't already give, e.g. runs needed per over, averages, differences or percentages.",
     parameters: { type: "object", properties: { expression: { type: "string", description: "e.g. (150 - 92) / (48 / 6)" } }, required: ["expression"] },
@@ -278,13 +326,14 @@ export const TOOLS: ToolDef[] = [
 ];
 
 /** Runs one tool call from the model. Never throws: errors go back to the model as data. */
-export function runTool(ctx: AgentContext, name: string, args: Json): Json {
+export async function runTool(ctx: AgentContext, name: string, args: Json): Promise<Json> {
   const tool = TOOLS.find((t) => t.name === name);
   if (!tool) return { error: `Unknown tool "${name}". Available: ${TOOLS.map((t) => t.name).join(", ")}.` };
   try {
-    return tool.run(ctx, args ?? {});
+    return await tool.run(ctx, args ?? {});
   } catch (e) {
-    return { error: e instanceof Error ? e.message : "The tool failed." };
+    console.error(JSON.stringify({ tool: name, error: e instanceof Error ? e.message : String(e) }));
+    return { error: "That lookup failed. Answer from the other data, or say the information isn't available." };
   }
 }
 

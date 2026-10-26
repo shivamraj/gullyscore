@@ -5,6 +5,13 @@
 // up numbers: it gets a snapshot with every question, and asks the tools (tools.ts) for more.
 
 import { ballChip, isLegal, type BallEvent, type BatterLine, type BowlerLine, type MatchState } from "@/engine";
+import type { MeetingResult, PlayerPastMatch } from "@/lib/db/history";
+
+/** Reads past matches from the database (src/lib/db/history.ts). Optional: tests pass a fake. */
+export interface HistoryProvider {
+  playerMatches(playerId: string, limit: number): Promise<PlayerPastMatch[]>;
+  teamMeetings(limit: number): Promise<MeetingResult[]>;
+}
 
 export interface AgentTeam {
   id: string;
@@ -22,6 +29,8 @@ export interface AgentContext {
   teams: AgentTeam[];
   /** Every ball so far, oldest first. */
   balls: BallEvent[];
+  /** Past matches from the database, for the history tools. */
+  history?: HistoryProvider;
 }
 
 /** One delivery with everything a question could need. */

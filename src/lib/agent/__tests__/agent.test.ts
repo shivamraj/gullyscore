@@ -63,7 +63,8 @@ function ctxFor(list: BallEvent[]): AgentContext {
   };
 }
 const ctx = ctxFor(balls);
-const tool = (name: string, args: Record<string, unknown> = {}) => runTool(ctx, name, args) as Record<string, any>;
+// The match-data tools are synchronous; call them directly. (runTool itself is async.)
+const tool = (name: string, args: Record<string, unknown> = {}) => TOOLS.find((t) => t.name === name)!.run(ctx, args) as Record<string, any>;
 
 // ---------- the match as the agent sees it ----------
 
@@ -188,15 +189,55 @@ describe("calculate", () => {
 });
 
 describe("runTool", () => {
-  it("never throws: unknown tools and bad input come back as errors", () => {
-    expect(tool("drop_tables").error).toContain("Unknown tool");
-    expect(tool("get_player", {}).error).toBe("Give a player name.");
+  it("never throws: unknown tools, bad input and failing lookups come back as errors", async () => {
+    expect(((await runTool(ctx, "drop_tables", {})) as any).error).toContain("Unknown tool");
+    expect(((await runTool(ctx, "get_player", {})) as any).error).toBe("Give a player name.");
+    const broken = { ...ctx, history: { playerMatches: async () => { throw new Error("db down"); }, teamMeetings: async () => [] } };
+    expect(((await runTool(broken, "get_player_history", { name: "Rahul" })) as any).error).toContain("lookup failed");
   });
   it("declares every tool with a schema the AI can read", () => {
     for (const t of TOOLS) {
       expect(t.description.length).toBeGreaterThan(40);
       expect(t.parameters).toMatchObject({ type: "object" });
     }
+  });
+});
+
+// ---------- past matches (database), through a fake history provider ----------
+
+describe("history tools", () => {
+  const past = [
+    { date: "2026-10-20", match: "League 2", for: "Riverside", against: "Hilltop", status: "finished", result: "Riverside won by 5 runs",
+      batting: [{ runs: 42, balls: 30, fours: 4, sixes: 1, out: true, how_out: "b Arjun" }], bowling: [] },
+    { date: "2026-10-12", match: "League 1", for: "Riverside", against: "Lakeview", status: "finished", result: "Lakeview won by 2 wickets",
+      batting: [{ runs: 15, balls: 12, fours: 2, sixes: 0, out: false, how_out: "not out" }], bowling: [{ overs: "2.0", runs: 14, wickets: 1, maidens: 0 }] },
+  ];
+  const seen: unknown[] = [];
+  const withHistory: AgentContext = {
+    ...ctx,
+    history: {
+      playerMatches: async (id, limit) => (seen.push([id, limit]), past),
+      teamMeetings: async () => [
+        { date: "2026-10-20", match: "League 2", status: "finished", result: "Riverside won by 5 runs", winner: "Riverside", scores: [] },
+        { date: "2026-09-01", match: "Friendly", status: "finished", result: "Hilltop won by 3 wickets", winner: "Hilltop", scores: [] },
+        { date: "2026-08-15", match: "Cup", status: "finished", result: "Riverside won by 1 run", winner: "Riverside", scores: [] },
+      ],
+    },
+  };
+  it("get_player_history resolves the name, asks the database for that player, and totals the career", async () => {
+    const r = (await runTool(withHistory, "get_player_history", { name: "rahul", last: 3 })) as any;
+    expect(seen).toEqual([["r1", 3]]);
+    expect(r.totals).toMatchObject({ matches: 2, innings: 2, runs: 57, balls: 42, not_outs: 1, highest: 42, wickets: 1, best_bowling: { wickets: 1, runs: 14 } });
+  });
+  it("get_head_to_head counts wins for each side", async () => {
+    const r = (await runTool(withHistory, "get_head_to_head", {})) as any;
+    expect(r).toMatchObject({ meetings: 3, wins: { Riverside: 2, Hilltop: 1 } });
+  });
+  it("says so when there's no history, or no database", async () => {
+    const none: AgentContext = { ...ctx, history: { playerMatches: async () => [], teamMeetings: async () => [] } };
+    expect(((await runTool(none, "get_player_history", { name: "Arjun" })) as any).note).toContain("No earlier matches");
+    expect(((await runTool(none, "get_head_to_head", {})) as any).note).toContain("haven't played");
+    expect(((await runTool(ctx, "get_head_to_head", {})) as any).error).toContain("aren't available");
   });
 });
 
