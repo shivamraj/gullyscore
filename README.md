@@ -65,8 +65,8 @@ Do this once. After that, every PR you merge into `main` goes live by itself in 
    Paste them only into Vercel, never into chat, code or a commit.
 4. **Deploy.** Click **Deploy** and wait for "Congratulations". Your app is at `https://gullyscore-<something>.vercel.app`. You can rename it under Settings › Domains.
 5. **Check it.**
-   - Open the URL on your phone and create a test match.
-   - Open the scoring link on one phone and the match page on another.
+   - Open the URL on your phone, tap **Umpire login**, and create a test match (set up Google first: see the next section).
+   - Keep the scorer open on that phone, and open the match from the home page on another phone.
    - Score a few balls: the viewer should update within a second, show the animations, and say "2 watching" when two people have the match open.
 
 If you change a key later, update it in Vercel › Settings › Environment Variables, then **Deployments › ⋯ › Redeploy**.
@@ -77,6 +77,32 @@ Optional: check the production build on your computer first.
 npm run build
 npm start   # then open http://localhost:3000
 ```
+
+## Umpire login with Google (one-time setup)
+
+Viewers never log in. Umpires sign in with Google to create and score matches, and only the umpire who created a match can score it. Do this once; no new keys go in `.env.local` or Vercel.
+
+**A. Google Cloud: create the sign-in client**
+1. Open https://console.cloud.google.com, top bar › **New project**, name it `GullyScore`, then select it.
+2. Search for **"Google Auth Platform"** and open it.
+3. **Branding:** app name `GullyScore`, your email as the support and contact email. Save.
+4. **Audience:** choose **External**, then **Publish app** (otherwise only listed test users can sign in).
+5. **Clients › Create client:**
+   - **Application type:** Web application.
+   - **Authorized JavaScript origins:** your live site (e.g. `https://gullyscore-sable.vercel.app`) and `http://localhost:3000`.
+   - **Authorized redirect URIs:** `https://<your-project>.supabase.co/auth/v1/callback`. Copy the exact URL from Supabase's Google page (B2).
+   - Click **Create** and copy the **Client ID** and **Client secret**.
+
+**B. Supabase: turn on Google**
+1. **Authentication › Sign In / Providers › Google**.
+2. Switch it on, paste the Client ID and Client secret, and Save.
+3. **Authentication › URL Configuration:**
+   - **Site URL:** your live site.
+   - **Redirect URLs:** add `<your live site>/**` and `http://localhost:3000/**`.
+
+Until this is done, the login page says "Google sign-in isn't switched on yet".
+
+**Test it locally:** `npm run dev`, open http://localhost:3000, tap **Umpire login › Continue with Google**, and you land on **My matches**. Phones on your Wi-Fi (`http://192.168.x.x:3000`) can watch, but Google sign-in only returns to addresses listed above, so log in on the computer or the live site.
 
 ## Install it on a phone (app icon on the home screen)
 

@@ -3,13 +3,14 @@
 // The scorer screen: top strip + button grid, with sheets for extras, wickets, the next bowler,
 // the start of the second innings and the More menu. Undo is always one tap away: in the grid,
 // above the bowler / innings sheets, and on the result screen.
+// Right after a match is created, a banner offers to share the viewer link.
 //
 // Layout: one column on phones held upright (wider on tablets). In landscape on a phone, tablet
 // or laptop (768 px and wider), the summary sits on the left and the buttons on the right, so
 // everything fits on one screen without scrolling.
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { maxWickets, type BallEvent, type ExtraType, type MatchConfig, type Player, type TeamConfig } from "@/engine";
 import { useScorer } from "@/hooks/useScorer";
 import { Button, buttonClasses } from "@/components/ui/Button";
@@ -22,8 +23,9 @@ import { WicketFlow } from "./WicketFlow";
 
 interface Props {
   matchId: string;
-  token: string;
   title: string;
+  /** Just created: show the "share with viewers" banner. */
+  justCreated?: boolean;
   config: MatchConfig;
   initialBalls: BallEvent[];
 }
@@ -37,8 +39,59 @@ function UndoIcon() {
   );
 }
 
-export function ScorerPanel({ matchId, token, title, config: initialConfig, initialBalls }: Props) {
-  const scorer = useScorer({ matchId, token, config: initialConfig, initialBalls });
+/** "Match ready" banner with the public viewer link: share sheet, WhatsApp, or copy. */
+function ShareBanner({ matchId, title, onClose }: { matchId: string; title: string; onClose: () => void }) {
+  const [url, setUrl] = useState("");
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    setUrl(`${window.location.origin}/match/${matchId}`);
+    // Drop "?new=1" so a reload doesn't show the banner again.
+    window.history.replaceState(null, "", `/score/${matchId}`);
+  }, [matchId]);
+  const text = `Follow ${title} live on GullyScore: ${url}`;
+
+  async function share() {
+    if (navigator.share) {
+      try {
+        await navigator.share({ title, text: `Follow ${title} live on GullyScore`, url });
+        return;
+      } catch {
+        // cancelled: fall through to copying
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      window.prompt("Copy this link:", url);
+    }
+  }
+
+  return (
+    <section aria-label="Share with viewers" className="mx-4 mt-3 flex flex-col gap-2.5 rounded-2xl border border-pitch/30 bg-pitch-soft px-4 py-3">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="font-bold text-pitch">Match ready. You&apos;re the scorer.</p>
+          <p className="text-sm text-ink-muted">Share the link so everyone can watch live. It&apos;s also on the home page.</p>
+        </div>
+        <button type="button" onClick={onClose} aria-label="Close" className="-mt-1 -mr-1 flex size-9 shrink-0 items-center justify-center rounded-lg text-xl font-bold text-ink-muted">
+          ×
+        </button>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <Button onClick={() => void share()}>{copied ? "Link copied" : "Share link"}</Button>
+        <a href={`https://wa.me/?text=${encodeURIComponent(text)}`} target="_blank" rel="noreferrer" className={buttonClasses("secondary", "md")}>
+          WhatsApp
+        </a>
+      </div>
+    </section>
+  );
+}
+
+export function ScorerPanel({ matchId, title, config: initialConfig, initialBalls, justCreated = false }: Props) {
+  const scorer = useScorer({ matchId, config: initialConfig, initialBalls });
+  const [sharing, setSharing] = useState(justCreated);
   const { config, state, balls, next, nameOf, sync, notice, setNotice, toast, busy, voice } = scorer;
   const [extra, setExtra] = useState<ExtraType | null>(null);
   const [changingBowler, setChangingBowler] = useState(false);
@@ -76,6 +129,8 @@ export function ScorerPanel({ matchId, token, title, config: initialConfig, init
     <div className="mx-auto flex min-h-dvh max-w-md flex-col md:max-w-2xl md:landscape:grid md:landscape:h-dvh md:landscape:max-w-6xl md:landscape:grid-cols-2">
       <TopStrip matchId={matchId} title={title} state={state} next={next} nameOf={nameOf} sync={sync} />
       <div className="flex flex-1 flex-col md:landscape:min-h-0 md:landscape:overflow-y-auto">
+        {sharing && <ShareBanner matchId={matchId} title={title} onClose={() => setSharing(false)} />}
+
         {notice && (
           <div role="alert" className="mx-4 mt-3 flex items-start gap-3 rounded-xl bg-wicket/10 px-3 py-2.5 text-sm font-semibold text-wicket">
             <span className="flex-1">{notice}</span>

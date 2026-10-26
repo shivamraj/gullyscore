@@ -20,8 +20,9 @@ export type SyncStatus =
 
 interface Options {
   matchId: string;
-  token: string;
   onStatus: (s: SyncStatus) => void;
+  /** The umpire's login ran out. Waiting balls are KEPT; they're sent after logging in again. */
+  onLoggedOut: () => void;
   /** The server refused a ball (rules or out of date). The queue is cleared; reload from the server. */
   onRejected: (message: string) => void;
 }
@@ -148,7 +149,7 @@ export class BallQueue {
         try {
           res = await fetch("/api/balls", {
             method: "POST",
-            headers: { "content-type": "application/json", "x-scoring-token": this.opts.token },
+            headers: { "content-type": "application/json" },
             body: JSON.stringify({ matchId: this.opts.matchId, clientId: item.clientId, ball: item.ball }),
           });
         } catch {
@@ -167,6 +168,13 @@ export class BallQueue {
         }
 
         const data = (await res.json().catch(() => ({}))) as { error?: string };
+        if (res.status === 401) {
+          // Logged out (session expired): keep every waiting ball on this phone.
+          this.opts.onStatus({ kind: "error", message: data.error ?? "Log in again to save the waiting balls." });
+          this.settleWaiters(new Error("Log in again to save the waiting balls."));
+          this.opts.onLoggedOut();
+          return;
+        }
         if (res.status >= 500) {
           this.report(true);
           this.retryLater();

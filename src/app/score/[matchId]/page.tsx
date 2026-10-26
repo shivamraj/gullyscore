@@ -34,8 +34,15 @@ function Message({ title, text, viewerHref }: { title: string; text: string; vie
   );
 }
 
-export default async function ScorePage({ params }: { params: Promise<{ matchId: string }> }) {
+export default async function ScorePage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ matchId: string }>;
+  searchParams: Promise<{ new?: string }>;
+}) {
   const { matchId } = await params;
+  const justCreated = (await searchParams).new === "1";
   if (!isUuid(matchId)) return <Message title="Match not found" text="Check the link and try again." />;
 
   let umpire: Umpire | null;
@@ -59,5 +66,5 @@ export default async function ScorePage({ params }: { params: Promise<{ matchId:
   }
 
   const { match, config, balls } = await loadScoringData(matchId);
-  return <ScorerPanel matchId={matchId} token="" title={match.title} config={config} initialBalls={balls} />;
+  return <ScorerPanel matchId={matchId} title={match.title} config={config} initialBalls={balls} justCreated={justCreated} />;
 }

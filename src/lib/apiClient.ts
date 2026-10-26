@@ -1,7 +1,5 @@
-// Browser helpers for calling our API: the scorer's device key, new ids, and a fetch wrapper.
-
-const OWNER_KEY_STORAGE = "gullyscore.ownerKey";
-let memoryOwnerKey: string | null = null;
+// Browser helpers for calling our API: new ids, and a fetch wrapper.
+// Who is calling is decided by the umpire's login cookie, which the browser sends by itself.
 
 /**
  * A random UUID v4. crypto.randomUUID() only exists on https or localhost, so phones opening the
@@ -23,36 +21,24 @@ export function newId(): string {
 }
 
 /**
- * This device's owner key. Saved teams and matches belong to it until scorer accounts exist.
- * Kept in localStorage; if storage is blocked (private mode), it lasts for this page visit only.
+ * Calls one of our API routes and throws the API's own error message on failure.
+ * If the umpire's login has run out (401), opens the login page and comes back here after.
  */
-export function getOwnerKey(): string {
-  try {
-    let key = localStorage.getItem(OWNER_KEY_STORAGE);
-    if (!key) {
-      key = newId();
-      localStorage.setItem(OWNER_KEY_STORAGE, key);
-    }
-    return key;
-  } catch {
-    memoryOwnerKey ??= newId();
-    return memoryOwnerKey;
-  }
-}
-
-/** Calls one of our API routes with the owner key, and throws the API's own error message on failure. */
 export async function api<T>(path: string, options: { method?: "GET" | "POST"; body?: unknown } = {}): Promise<T> {
   let res: Response;
   try {
     res = await fetch(path, {
       method: options.method ?? "GET",
-      headers: { "content-type": "application/json", "x-owner-key": getOwnerKey() },
+      headers: { "content-type": "application/json" },
       body: options.body === undefined ? undefined : JSON.stringify(options.body),
     });
   } catch {
     throw new Error("Can't reach the server. Check your internet connection.");
   }
   const data = (await res.json().catch(() => ({}))) as { error?: string };
+  if (res.status === 401 && typeof window !== "undefined") {
+    window.location.assign(`/login?next=${encodeURIComponent(window.location.pathname)}`);
+  }
   if (!res.ok) throw new Error(data.error ?? `Request failed (${res.status}).`);
   return data as T;
 }
