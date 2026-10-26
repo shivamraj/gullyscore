@@ -43,7 +43,8 @@ Keys go in `.env.local` (never committed). See `.env.example` for the list:
 | `NEXT_PUBLIC_SUPABASE_URL` | Phase 2 | Supabase › Project Settings › API |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Phase 2 | Supabase › Project Settings › API |
 | `SUPABASE_SERVICE_ROLE_KEY` | Phase 2 | Supabase › Project Settings › API (keep secret) |
-| `GEMINI_API_KEY` | Phase 5 | Google AI Studio › Get API key |
+| `GEMINI_API_KEY` | Phase 5 | Google AI Studio › Get API key. **Needed for Ask**; without it Ask replies "isn't switched on". |
+| `GEMINI_MODEL` | Optional | A different Gemini model than the default in `src/lib/agent/llm.ts`. |
 
 ## Put it live on Vercel (free)
 
@@ -60,7 +61,7 @@ Do this once. After that, every PR you merge into `main` goes live by itself in 
    | `NEXT_PUBLIC_SUPABASE_URL` | Supabase › Project Settings › API |
    | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase › Project Settings › API |
    | `SUPABASE_SERVICE_ROLE_KEY` | Supabase › Project Settings › API (secret) |
-   | `GEMINI_API_KEY` | Google AI Studio › Get API key (optional: without it, Ask answers only the quick questions) |
+   | `GEMINI_API_KEY` | Google AI Studio › Get API key. Needed for Ask: without it, Ask replies "isn't switched on". |
 
    Paste them only into Vercel, never into chat, code or a commit.
 4. **Deploy.** Click **Deploy** and wait for "Congratulations". Your app is at `https://gullyscore-<something>.vercel.app`. You can rename it under Settings › Domains.
