@@ -4,6 +4,7 @@
 
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { cache } from "react";
 import { computeState } from "@/engine";
 import { isMatchOwner } from "@/lib/db/balls";
 import { getMatchConfig } from "@/lib/db/matches";
@@ -14,7 +15,8 @@ import { Scoreboard, type ViewerTeam } from "@/components/viewer/Scoreboard";
 
 export const dynamic = "force-dynamic";
 
-async function load(matchId: string) {
+// cache(): the page and its <title> (generateMetadata) share one load per request instead of two.
+const load = cache(async function load(matchId: string) {
   try {
     const { match, config } = await getMatchConfig(matchId);
     const db = getServerSupabase();
@@ -40,6 +42,16 @@ async function load(matchId: string) {
     if (e instanceof ApiError && e.status === 404) return null;
     throw e;
   }
+});
+
+/** Did the logged-in umpire (if any) create this match? Never breaks the public page. */
+async function viewerCanScore(matchId: string): Promise<boolean> {
+  try {
+    const umpire = await currentUmpire();
+    return umpire ? await isMatchOwner(matchId, umpire.id) : false;
+  } catch {
+    return false;
+  }
 }
 
 export async function generateMetadata({ params }: { params: Promise<{ matchId: string }> }): Promise<Metadata> {
@@ -55,11 +67,9 @@ export async function generateMetadata({ params }: { params: Promise<{ matchId: 
 
 export default async function MatchPage({ params }: { params: Promise<{ matchId: string }> }) {
   const { matchId } = await params;
-  const data = await load(matchId);
+  // The match and the umpire check run at the same time.
+  const [data, canScore] = await Promise.all([load(matchId), viewerCanScore(matchId)]);
   if (!data) notFound();
-  // Viewers aren't logged in; a login check failing must never break the public page.
-  const umpire = await currentUmpire().catch(() => null);
-  const canScore = umpire ? await isMatchOwner(matchId, umpire.id).catch(() => false) : false;
   return (
     <Scoreboard
       matchId={matchId}

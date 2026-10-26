@@ -5,7 +5,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { isMatchOwner, loadScoringData } from "@/lib/db/balls";
+import { loadScoringData, ownerOf } from "@/lib/db/balls";
 import { isUuid } from "@/lib/db/types";
 import { currentUmpire, type Umpire } from "@/lib/supabase/auth";
 import { ScorerPanel } from "@/components/scorer/ScorerPanel";
@@ -45,11 +45,15 @@ export default async function ScorePage({
   const justCreated = (await searchParams).new === "1";
   if (!isUuid(matchId)) return <Message title="Match not found" text="Check the link and try again." />;
 
+  // Who's logged in, who owns the match, and the match itself: all asked at the same time.
   let umpire: Umpire | null;
   let owner = false;
+  let data: Awaited<ReturnType<typeof loadScoringData>> | null = null;
   try {
-    umpire = await currentUmpire();
-    if (umpire) owner = await isMatchOwner(matchId, umpire.id);
+    const [u, ownerId, loaded] = await Promise.all([currentUmpire(), ownerOf(matchId), loadScoringData(matchId).catch(() => null)]);
+    umpire = u;
+    owner = Boolean(u && ownerId === u.id);
+    data = loaded;
   } catch (e) {
     const text = e instanceof Error && e.name === "ConfigError" ? e.message : "Could not reach the database. Try again.";
     return <Message title="Something went wrong" text={text} />;
@@ -65,6 +69,7 @@ export default async function ScorePage({
     );
   }
 
-  const { match, config, balls } = await loadScoringData(matchId);
+  if (!data) return <Message title="Match not found" text="Check the link and try again." />;
+  const { match, config, balls } = data;
   return <ScorerPanel matchId={matchId} title={match.title} config={config} initialBalls={balls} justCreated={justCreated} />;
 }
